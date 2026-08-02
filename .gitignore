@@ -1,0 +1,6 @@
+node_modules
+dist
+bot/data
+*.log
+.DS_Store
+server/data
