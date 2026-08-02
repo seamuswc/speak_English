@@ -4,7 +4,23 @@ import type { AppState } from './srs'
 export interface Auth {
   token: string
   email: string
+  /** epoch ms the paid subscription ends; undefined = payments disabled */
+  subUntil?: number
 }
+
+export interface PaymentInfo {
+  address: string
+  wei: string
+  eth: string
+  usd: number
+  plan: 'month' | 'year'
+  days: number
+  expiresAt: number
+}
+
+export type RegisterResult =
+  | Auth
+  | { paymentRequired: true; payment: PaymentInfo; email: string }
 
 const AUTH_KEY = 'speak-english:auth'
 
@@ -32,8 +48,28 @@ async function call<T>(path: string, opts: RequestInit = {}): Promise<T> {
   return j as T
 }
 
-export const apiRegister = (email: string, password: string) =>
-  call<Auth>('/api/register', { method: 'POST', body: JSON.stringify({ email, password }) })
+export const apiRegister = (email: string, password: string, plan: 'month' | 'year' = 'month') =>
+  call<RegisterResult>('/api/register', {
+    method: 'POST',
+    body: JSON.stringify({ email, password, plan }),
+  })
+
+export const apiPayCheck = (email: string | null, token: string | null) =>
+  call<{ paid: boolean; token?: string | null; email?: string; subUntil?: number; expired?: boolean }>(
+    '/api/pay/check',
+    {
+      method: 'POST',
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+      body: JSON.stringify(email ? { email } : {}),
+    },
+  )
+
+export const apiPayRenew = (token: string, plan: 'month' | 'year') =>
+  call<{ payment: PaymentInfo }>('/api/pay/renew', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}` },
+    body: JSON.stringify({ plan }),
+  })
 
 export const apiLogin = (email: string, password: string) =>
   call<Auth>('/api/login', { method: 'POST', body: JSON.stringify({ email, password }) })

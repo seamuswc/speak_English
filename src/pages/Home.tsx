@@ -65,13 +65,17 @@ import {
   apiGetState,
   apiLogin,
   apiLogout,
+  apiPayCheck,
+  apiPayRenew,
   apiPutState,
   apiRegister,
   apiReset,
   loadAuth,
   saveAuth,
   type Auth,
+  type PaymentInfo,
 } from '@/lib/api'
+import QRCode from 'qrcode'
 
 type Tab = 'review' | 'add' | 'library' | 'progress'
 
@@ -141,6 +145,26 @@ export default function Home() {
           setAuth(null)
         }}
         onBack={() => setShowAuth(false)}
+      />
+    )
+  }
+
+  // signed in but subscription expired → paywall (renewal)
+  if (auth && auth.subUntil !== undefined && auth.subUntil <= Date.now()) {
+    return (
+      <PayScreen
+        email={auth.email}
+        token={auth.token}
+        initialPayment={null}
+        onPaid={(a) => {
+          saveAuth(a)
+          setAuth(a)
+        }}
+        onCancel={() => {
+          if (auth) apiLogout(auth.token)
+          saveAuth(null)
+          setAuth(null)
+        }}
       />
     )
   }
@@ -1265,6 +1289,8 @@ function AuthScreen({
   const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [plan, setPlan] = useState<'month' | 'year'>('month')
+  const [pendingPay, setPendingPay] = useState<{ email: string; payment: PaymentInfo } | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
@@ -1277,15 +1303,33 @@ function AuthScreen({
       if (mode === 'forgot') {
         await apiForgot(email)
         setNotice('そのメールアドレスにアカウントがあれば、再設定リンクを送信しました。受信トレイを確認してください。')
+      } else if (mode === 'register') {
+        const r = await apiRegister(email, password, plan)
+        if ('paymentRequired' in r) {
+          setPendingPay({ email: r.email, payment: r.payment })
+        } else {
+          onAuth(r)
+        }
       } else {
-        const a = mode === 'login' ? await apiLogin(email, password) : await apiRegister(email, password)
-        onAuth(a)
+        onAuth(await apiLogin(email, password))
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'エラーが発生しました')
     } finally {
       setBusy(false)
     }
+  }
+
+  if (pendingPay) {
+    return (
+      <PayScreen
+        email={pendingPay.email}
+        token={null}
+        initialPayment={pendingPay.payment}
+        onPaid={onAuth}
+        onCancel={() => setPendingPay(null)}
+      />
+    )
   }
 
   return (
@@ -1367,6 +1411,35 @@ function AuthScreen({
                 </div>
               )}
 
+              {mode === 'register' && (
+                <div className="grid grid-cols-2 gap-2">
+                  {(
+                    [
+                      ['month', '月額プラン', '$5 / 月', 'いつでもやめられる'],
+                      ['year', '年間プラン', '$50 / 年', '2か月分お得'],
+                    ] as const
+                  ).map(([p, name, price, sub]) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setPlan(p)}
+                      className={`rounded-xl border p-3 text-left transition-colors ${
+                        plan === p
+                          ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500'
+                          : 'border-stone-200 bg-white hover:border-stone-300'
+                      }`}
+                    >
+                      <div className="text-sm font-medium">{name}</div>
+                      <div className="mt-0.5 text-lg font-semibold text-emerald-700">{price}</div>
+                      <div className="text-[11px] text-stone-400">{sub}</div>
+                    </button>
+                  ))}
+                  <p className="col-span-2 text-center text-[11px] text-stone-400">
+                    お支払いは ETH (イーサリアム) のみ · 登録後に送金画面が表示されます
+                  </p>
+                </div>
+              )}
+
               {error && <p className="text-sm text-red-600">{error}</p>}
               {notice && <p className="text-sm text-emerald-700">{notice}</p>}
 
@@ -1376,7 +1449,7 @@ function AuthScreen({
                   : mode === 'login'
                     ? 'ログイン'
                     : mode === 'register'
-                      ? 'アカウント作成'
+                      ? 'お支払いへ進む'
                       : '再設定リンクをメールで送る'}
               </Button>
 
@@ -1386,6 +1459,188 @@ function AuthScreen({
               </p>
             </>
           )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── ETH payment screen (register paywall + renewal) ────────────────────────
+
+function PayScreen({
+  email,
+  token,
+  initialPayment,
+  onPaid,
+  onCancel,
+}: {
+  email: string
+  /** null = fresh registration (no session yet) */
+  token: string | null
+  /** register path passes the intent directly; renewal fetches one */
+  initialPayment: PaymentInfo | null
+  onPaid: (a: Auth) => void
+  onCancel: () => void
+}) {
+  const [payment, setPayment] = useState<PaymentInfo | null>(initialPayment)
+  const [plan, setPlan] = useState<'month' | 'year'>(initialPayment?.plan ?? 'month')
+  const [qr, setQr] = useState('')
+  const [checking, setChecking] = useState(false)
+  const [copied, setCopied] = useState('')
+  const [error, setError] = useState('')
+  const renewal = token !== null && initialPayment === null
+
+  // renewal path: fetch an intent for the chosen plan
+  useEffect(() => {
+    if (!renewal) return
+    setPayment(null)
+    apiPayRenew(token, plan)
+      .then((r) => setPayment(r.payment))
+      .catch((e) => setError(e instanceof Error ? e.message : 'エラーが発生しました'))
+  }, [renewal, token, plan])
+
+  // QR for wallet apps: ethereum:<address>?value=<wei>
+  useEffect(() => {
+    if (!payment) return
+    QRCode.toDataURL(`ethereum:${payment.address}?value=${payment.wei}`, {
+      margin: 1,
+      width: 200,
+      color: { dark: '#1c1917', light: '#ffffff' },
+    })
+      .then(setQr)
+      .catch(() => setQr(''))
+  }, [payment])
+
+  const check = useCallback(async () => {
+    if (checking) return
+    setChecking(true)
+    setError('')
+    try {
+      const r = await apiPayCheck(token ? null : email, token)
+      if (r.paid) {
+        onPaid({ token: r.token ?? token!, email, subUntil: r.subUntil })
+        return
+      }
+      if (r.expired) setError('この支払いリクエストは期限切れです。戻ってやり直してください。')
+    } catch {
+      // transient network/Etherscan hiccup — the next auto-check retries
+    } finally {
+      setChecking(false)
+    }
+  }, [checking, email, token, onPaid])
+
+  // auto-check every 15 s
+  useEffect(() => {
+    if (!payment) return
+    const t = setInterval(check, 15_000)
+    return () => clearInterval(t)
+  }, [payment, check])
+
+  const copy = (text: string, what: string) => {
+    navigator.clipboard?.writeText(text).catch(() => {})
+    setCopied(what)
+    setTimeout(() => setCopied(''), 1500)
+  }
+
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center bg-stone-50 px-4 py-10 text-stone-900">
+      <div className="w-full max-w-md">
+        <button onClick={onCancel} className="mb-4 text-sm text-stone-500 hover:text-emerald-700">
+          ← {renewal ? 'ログアウト' : '戻る'}
+        </button>
+        <div className="mb-6 flex flex-col items-center gap-2 text-center">
+          <GraduationCap className="h-10 w-10 text-emerald-700" />
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {renewal ? 'サブスクリプションの更新' : 'お支払い'}
+          </h1>
+          <p className="text-sm text-stone-500">
+            {renewal
+              ? '有効期限が切れました。更新すると、保存された進捗にそのままアクセスできます。'
+              : <>{email} · 残り1ステップです</>}
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-4 rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
+          {renewal && (
+            <div className="grid grid-cols-2 gap-2">
+              {(
+                [
+                  ['month', '月額プラン', '$5 / 月'],
+                  ['year', '年間プラン', '$50 / 年'],
+                ] as const
+              ).map(([p, name, price]) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPlan(p)}
+                  className={`rounded-xl border p-3 text-left transition-colors ${
+                    plan === p
+                      ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500'
+                      : 'border-stone-200 bg-white hover:border-stone-300'
+                  }`}
+                >
+                  <div className="text-sm font-medium">{name}</div>
+                  <div className="mt-0.5 text-lg font-semibold text-emerald-700">{price}</div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {payment ? (
+            <>
+              <div className="flex flex-col items-center gap-3 rounded-xl bg-stone-50 p-4">
+                {qr && <img src={qr} alt="payment QR" className="h-40 w-40 rounded-lg" />}
+                <div className="text-center">
+                  <div className="text-xs uppercase tracking-wide text-stone-400">
+                    送金額 (正確に)
+                  </div>
+                  <button
+                    onClick={() => copy(payment.eth, 'amount')}
+                    className="mt-0.5 break-all font-mono text-lg font-semibold text-emerald-700 hover:underline"
+                    title="タップでコピー"
+                  >
+                    {payment.eth} ETH
+                  </button>
+                  <div className="text-xs text-stone-400">
+                    ≈ ${payment.usd} · {copied === 'amount' ? 'コピーしました ✓' : 'タップでコピー'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-1.5">
+                <div className="text-xs uppercase tracking-wide text-stone-400">送金先アドレス</div>
+                <button
+                  onClick={() => copy(payment.address, 'addr')}
+                  className="break-all rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-left font-mono text-xs text-stone-700 hover:border-emerald-400"
+                >
+                  {payment.address}
+                </button>
+                <div className="text-right text-[11px] text-emerald-700">
+                  {copied === 'addr' ? 'コピーしました ✓' : ''}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-center gap-2 text-sm text-stone-500">
+                {checking ? (
+                  <span className="animate-pulse">ブロックチェーンを確認中…</span>
+                ) : (
+                  <span>15秒ごとに自動確認します · 送金後そのままお待ちください</span>
+                )}
+              </div>
+              <Button variant="outline" onClick={check} disabled={checking}>
+                今すぐ確認
+              </Button>
+              <p className="text-center text-[11px] leading-relaxed text-stone-400">
+                イーサリアムメインネットのみ対応。表示された金額を<strong>正確に</strong>送ってください
+                (この金額でお支払いを照合します)。確認には通常1〜2分かかります。
+              </p>
+            </>
+          ) : (
+            <p className="py-8 text-center text-sm text-stone-400">
+              {error || '支払い情報を生成しています…'}
+            </p>
+          )}
+          {error && payment && <p className="text-center text-sm text-red-600">{error}</p>}
         </div>
       </div>
     </div>

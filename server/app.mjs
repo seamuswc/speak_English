@@ -10,6 +10,13 @@ import { scryptSync, randomBytes, timingSafeEqual, createHash } from 'node:crypt
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createReadStream } from 'node:fs'
+import {
+  PAYMENTS_ENABLED,
+  PLANS,
+  checkIntent,
+  createIntent,
+  subscriptionActive,
+} from './pay.mjs'
 
 const execFileAsync = promisify(execFile)
 
@@ -153,7 +160,15 @@ async function handleApi(req, res, path) {
     if (password.length < 6) return json(res, 400, { error: 'パスワードは6文字以上にしてください' })
     if (auth.users.some((u) => u.email === email)) return json(res, 409, { error: 'このアカウントは既に存在します — ログインしてください' })
     const salt = randomBytes(16).toString('hex')
-    auth.users.push({ email, salt, pass: hashPassword(password, salt), createdAt: Date.now() })
+    const user = { email, salt, pass: hashPassword(password, salt), createdAt: Date.now(), subUntil: 0 }
+    auth.users.push(user)
+    // paid registration: account is created but locked until the ETH payment lands
+    if (PAYMENTS_ENABLED) {
+      const plan = body.plan === 'year' ? 'year' : 'month'
+      const payment = await createIntent(auth, email, plan)
+      await saveAuth(auth)
+      return json(res, 200, { paymentRequired: true, payment, email })
+    }
     const t = token()
     auth.sessions[t] = { email, exp: Date.now() + 90 * 24 * 3600 * 1000 }
     await saveAuth(auth)
@@ -173,7 +188,42 @@ async function handleApi(req, res, path) {
     const t = token()
     auth.sessions[t] = { email, exp: Date.now() + 90 * 24 * 3600 * 1000 }
     await saveAuth(auth)
-    return json(res, 200, { token: t, email })
+    const out = { token: t, email }
+    if (PAYMENTS_ENABLED) out.subUntil = u.subUntil ?? 0
+    return json(res, 200, out)
+  }
+
+  // payment status — registration path (email in body) or renewal path (Bearer)
+  if (path === '/api/pay/check' && req.method === 'POST') {
+    if (!PAYMENTS_ENABLED) return json(res, 400, { error: 'payments disabled' })
+    const authed = sessionEmail(auth, req)
+    const email = authed ?? (body.email ?? '').trim().toLowerCase()
+    if (!email) return json(res, 400, { error: 'no email' })
+    const r = await checkIntent(auth, email)
+    if (!r.paid) return json(res, 200, r)
+    let t = null
+    if (!authed) {
+      t = token()
+      auth.sessions[t] = { email, exp: Date.now() + 90 * 24 * 3600 * 1000 }
+    }
+    await saveAuth(auth)
+    return json(res, 200, { paid: true, token: t, email, subUntil: r.subUntil })
+  }
+
+  // new payment intent for a signed-in user renewing an expired subscription
+  if (path === '/api/pay/renew' && req.method === 'POST') {
+    if (!PAYMENTS_ENABLED) return json(res, 400, { error: 'payments disabled' })
+    const email = sessionEmail(auth, req)
+    if (!email) return json(res, 401, { error: 'ログインしていません' })
+    const plan = body.plan === 'year' ? 'year' : 'month'
+    const payment = await createIntent(auth, email, plan)
+    await saveAuth(auth)
+    return json(res, 200, { payment })
+  }
+
+  // plan prices (for the register screen)
+  if (path === '/api/pay/plans' && req.method === 'GET') {
+    return json(res, 200, { enabled: PAYMENTS_ENABLED, plans: PLANS })
   }
 
   if (path === '/api/logout' && req.method === 'POST') {
@@ -219,6 +269,9 @@ async function handleApi(req, res, path) {
   if (path === '/api/state' && req.method === 'GET') {
     const email = sessionEmail(auth, req)
     if (!email) return json(res, 401, { error: 'Not signed in' })
+    const u = auth.users.find((x) => x.email === email)
+    if (PAYMENTS_ENABLED && !subscriptionActive(u))
+      return json(res, 402, { error: 'subscription expired', subUntil: u?.subUntil ?? 0 })
     try {
       const raw = await readFile(stateFile(email), 'utf8')
       res.writeHead(200, { 'content-type': 'application/json' })
@@ -231,6 +284,9 @@ async function handleApi(req, res, path) {
   if (path === '/api/state' && req.method === 'PUT') {
     const email = sessionEmail(auth, req)
     if (!email) return json(res, 401, { error: 'Not signed in' })
+    const u = auth.users.find((x) => x.email === email)
+    if (PAYMENTS_ENABLED && !subscriptionActive(u))
+      return json(res, 402, { error: 'subscription expired', subUntil: u?.subUntil ?? 0 })
     if (!body.state || !Array.isArray(body.state.cards)) return json(res, 400, { error: 'Bad state' })
     await mkdir(STATES, { recursive: true })
     await writeFile(stateFile(email), JSON.stringify(body.state))
