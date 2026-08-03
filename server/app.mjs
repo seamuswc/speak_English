@@ -160,15 +160,17 @@ async function handleApi(req, res, path) {
     if (password.length < 6) return json(res, 400, { error: 'パスワードは6文字以上にしてください' })
     if (auth.users.some((u) => u.email === email)) return json(res, 409, { error: 'このアカウントは既に存在します — ログインしてください' })
     const salt = randomBytes(16).toString('hex')
-    const user = { email, salt, pass: hashPassword(password, salt), createdAt: Date.now(), subUntil: 0 }
-    auth.users.push(user)
-    // paid registration: account is created but locked until the ETH payment lands
+    // paid registration: no account row until the payment is confirmed on-chain —
+    // credentials live in pendingRegs and are promoted by checkIntent
     if (PAYMENTS_ENABLED) {
+      if (!auth.pendingRegs) auth.pendingRegs = {}
+      auth.pendingRegs[email] = { email, salt, pass: hashPassword(password, salt), createdAt: Date.now() }
       const plan = body.plan === 'year' ? 'year' : 'month'
       const payment = await createIntent(auth, email, plan)
       await saveAuth(auth)
       return json(res, 200, { paymentRequired: true, payment, email })
     }
+    auth.users.push({ email, salt, pass: hashPassword(password, salt), createdAt: Date.now(), subUntil: 0 })
     const t = token()
     auth.sessions[t] = { email, exp: Date.now() + 90 * 24 * 3600 * 1000 }
     await saveAuth(auth)

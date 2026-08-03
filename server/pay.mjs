@@ -152,8 +152,19 @@ export async function checkIntent(auth, email) {
   })
   if (!hit) return { paid: false }
   auth.usedTx.push(hit.hash)
+  const now = Date.now()
+  if (auth.pendingRegs?.[email]) {
+    // completing registration: only NOW does the account get created
+    const pending = auth.pendingRegs[email]
+    const subUntil = now + p.days * 24 * 3600 * 1000
+    auth.users.push({ ...pending, createdAt: pending.createdAt ?? now, subUntil })
+    delete auth.pendingRegs[email]
+    delete auth.payIntents[email]
+    console.log(`pay: ${email} registered+paid ${hit.symbol} on ${hit.chain} → ${intent.address} (${hit.hash})`)
+    return { paid: true, subUntil }
+  }
   const user = auth.users.find((u) => u.email === email)
-  const base = Math.max(Date.now(), user?.subUntil ?? 0)
+  const base = Math.max(now, user?.subUntil ?? 0)
   const subUntil = base + p.days * 24 * 3600 * 1000
   if (user) user.subUntil = subUntil
   delete auth.payIntents[email]
