@@ -1435,7 +1435,7 @@ function AuthScreen({
                     </button>
                   ))}
                   <p className="col-span-2 text-center text-[11px] text-stone-400">
-                    お支払いは USDC (イーサリアムネットワーク) のみ · 登録後に送金画面が表示されます
+                    お支払いは USDC または USDT (主要ネットワーク対応) · 登録後に送金画面が表示されます
                   </p>
                 </div>
               )}
@@ -1599,7 +1599,7 @@ function PayScreen({
                     className="mt-0.5 break-all font-mono text-lg font-semibold text-emerald-700 hover:underline"
                     title="タップでコピー"
                   >
-                    {payment.usdc} USDC
+                    {payment.usdc} USDC / USDT
                   </button>
                   <div className="text-xs text-stone-400">
                     ≈ ${payment.usd} · {copied === 'amount' ? 'コピーしました ✓' : 'タップでコピー'}
@@ -1631,8 +1631,9 @@ function PayScreen({
                 今すぐ確認
               </Button>
               <p className="text-center text-[11px] leading-relaxed text-stone-400">
-                イーサリアムメインネットの <strong>USDC</strong> のみ対応。表示された金額を
-                <strong>正確に</strong>送ってください (この金額でお支払いを照合します)。
+                <strong>USDC または USDT</strong> · Ethereum / Arbitrum / Base / Optimism /
+                Polygon / BSC のどのネットワークでも送れます。表示された金額を
+                <strong>正確に</strong>送ってください (この金額で照合します)。QRはメインネットUSDC用 ·
                 確認には通常1〜2分かかります。
               </p>
             </>
