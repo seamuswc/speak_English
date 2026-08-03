@@ -1435,7 +1435,7 @@ function AuthScreen({
                     </button>
                   ))}
                   <p className="col-span-2 text-center text-[11px] text-stone-400">
-                    お支払いは ETH (イーサリアム) のみ · 登録後に送金画面が表示されます
+                    お支払いは USDC (イーサリアムネットワーク) のみ · 登録後に送金画面が表示されます
                   </p>
                 </div>
               )}
@@ -1465,7 +1465,7 @@ function AuthScreen({
   )
 }
 
-// ─── ETH payment screen (register paywall + renewal) ────────────────────────
+// ─── USDC payment screen (register paywall + renewal) ───────────────────────
 
 function PayScreen({
   email,
@@ -1499,10 +1499,10 @@ function PayScreen({
       .catch((e) => setError(e instanceof Error ? e.message : 'エラーが発生しました'))
   }, [renewal, token, plan])
 
-  // QR for wallet apps: ethereum:<address>?value=<wei>
+  // QR for wallet apps (EIP-681 USDC transfer, pre-fills token + amount)
   useEffect(() => {
     if (!payment) return
-    QRCode.toDataURL(`ethereum:${payment.address}?value=${payment.wei}`, {
+    QRCode.toDataURL(payment.qr, {
       margin: 1,
       width: 200,
       color: { dark: '#1c1917', light: '#ffffff' },
@@ -1595,11 +1595,11 @@ function PayScreen({
                     送金額 (正確に)
                   </div>
                   <button
-                    onClick={() => copy(payment.eth, 'amount')}
+                    onClick={() => copy(payment.usdc, 'amount')}
                     className="mt-0.5 break-all font-mono text-lg font-semibold text-emerald-700 hover:underline"
                     title="タップでコピー"
                   >
-                    {payment.eth} ETH
+                    {payment.usdc} USDC
                   </button>
                   <div className="text-xs text-stone-400">
                     ≈ ${payment.usd} · {copied === 'amount' ? 'コピーしました ✓' : 'タップでコピー'}
@@ -1631,8 +1631,9 @@ function PayScreen({
                 今すぐ確認
               </Button>
               <p className="text-center text-[11px] leading-relaxed text-stone-400">
-                イーサリアムメインネットのみ対応。表示された金額を<strong>正確に</strong>送ってください
-                (この金額でお支払いを照合します)。確認には通常1〜2分かかります。
+                イーサリアムメインネットの <strong>USDC</strong> のみ対応。表示された金額を
+                <strong>正確に</strong>送ってください (この金額でお支払いを照合します)。
+                確認には通常1〜2分かかります。
               </p>
             </>
           ) : (

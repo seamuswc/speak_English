@@ -1,15 +1,20 @@
-// ETH subscription payments: $5/month or $50/year, verified via Etherscan.
-// No payment processor — users send ETH to ETH_ADDRESS, we match the incoming
-// transaction by exact wei amount (each intent gets a unique wei nonce).
+// USDC subscription payments: $5/month or $50/year, verified via Etherscan.
+// No payment processor — users send USDC (ERC-20, Ethereum mainnet) to
+// ETH_ADDRESS, we match the incoming token transfer by exact amount (each
+// intent gets a unique sub-cent nonce so concurrent payers never collide).
 //
 // Env:
 //   ETH_ADDRESS        receiving address; EMPTY = payments disabled (free registration)
 //   ETHERSCAN_API_KEY  Etherscan V2 API key
+//   USDC_CONTRACT      defaults to mainnet USDC
 //   SUB_MONTH_USD      default 5
 //   SUB_YEAR_USD       default 50
 
 const ETH_ADDRESS = (process.env.ETH_ADDRESS ?? '').trim()
 const API_KEY = (process.env.ETHERSCAN_API_KEY ?? '').trim()
+const USDC_CONTRACT = (
+  process.env.USDC_CONTRACT ?? '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+).trim()
 export const PAYMENTS_ENABLED = Boolean(ETH_ADDRESS && API_KEY)
 
 export const PLANS = {
@@ -18,35 +23,26 @@ export const PLANS = {
 }
 
 const INTENT_TTL_MS = 2 * 3600 * 1000 // 2 h to complete a payment
-const OVERPAY_BUFFER_WEI = 1_000_000_000_000_000n // 0.001 ETH forgiveness on top
+const OVERPAY_BUFFER = 10_000n // 0.01 USDC forgiveness on top (6 decimals)
 
 // ─── Etherscan (V2 multichain API, chainid=1 = mainnet) ─────────────────────
 
 const api = (params) =>
   `https://api.etherscan.io/v2/api?chainid=1&${params}&apikey=${API_KEY}`
 
-let priceCache = { at: 0, usd: 0 }
-export async function ethPriceUsd() {
-  if (Date.now() - priceCache.at < 5 * 60_000 && priceCache.usd) return priceCache.usd
-  const r = await fetch(api('module=stats&action=ethprice'))
-  const j = await r.json()
-  const usd = parseFloat(j?.result?.ethusd ?? '')
-  if (!usd) throw new Error('eth price unavailable')
-  priceCache = { at: Date.now(), usd }
-  return usd
-}
-
 let txCache = { at: 0, txs: [] }
-async function incomingTxs() {
+async function incomingTransfers() {
   if (Date.now() - txCache.at < 30_000 && txCache.txs.length) return txCache.txs
   const r = await fetch(
     api(
-      `module=account&action=txlist&address=${ETH_ADDRESS}&startblock=0&endblock=99999999&page=1&offset=200&sort=desc`,
+      `module=account&action=tokentx&contractaddress=${USDC_CONTRACT}&address=${ETH_ADDRESS}&page=1&offset=200&sort=desc`,
     ),
   )
   const j = await r.json()
   const txs = (Array.isArray(j?.result) ? j.result : []).filter(
-    (t) => t.to?.toLowerCase() === ETH_ADDRESS.toLowerCase() && t.isError === '0',
+    (t) =>
+      t.to?.toLowerCase() === ETH_ADDRESS.toLowerCase() &&
+      t.contractAddress?.toLowerCase() === USDC_CONTRACT.toLowerCase(),
   )
   txCache = { at: Date.now(), txs }
   return txs
@@ -63,11 +59,11 @@ export async function createIntent(auth, email, plan) {
   if (existing && existing.plan === plan && now - existing.createdAt < INTENT_TTL_MS) {
     return publicIntent(existing, p)
   }
-  const ethUsd = await ethPriceUsd()
-  const baseWei = BigInt(Math.round((p.usd / ethUsd) * 1e18))
-  // unique wei nonce (≪ $0.0001) so concurrent payers never collide
-  const nonce = BigInt(Math.floor(Math.random() * 60_000))
-  const intent = { plan, wei: (baseWei + nonce).toString(), createdAt: now }
+  // USDC has 6 decimals: $5.00 = 5_000_000 base units
+  const baseUnits = BigInt(Math.round(p.usd * 1e6))
+  // unique sub-cent nonce ($0.000001 – $0.06) so concurrent payers never collide
+  const nonce = BigInt(1 + Math.floor(Math.random() * 59_999))
+  const intent = { plan, amount: (baseUnits + nonce).toString(), createdAt: now }
   if (!auth.payIntents) auth.payIntents = {}
   auth.payIntents[email] = intent
   return publicIntent(intent, p)
@@ -76,19 +72,21 @@ export async function createIntent(auth, email, plan) {
 function publicIntent(intent, p) {
   return {
     address: ETH_ADDRESS,
-    wei: intent.wei,
-    eth: weiToEthString(intent.wei),
+    amount: intent.amount, // USDC base units (6 decimals)
+    usdc: unitsToUsdcString(intent.amount),
     usd: p.usd,
     plan: intent.plan,
     days: p.days,
     expiresAt: intent.createdAt + INTENT_TTL_MS,
+    // EIP-681: wallet apps pre-fill a USDC transfer from this QR
+    qr: `ethereum:${USDC_CONTRACT}/transfer?address=${ETH_ADDRESS}&uint256=${intent.amount}`,
   }
 }
 
-function weiToEthString(wei) {
-  const w = wei.padStart(19, '0')
-  const whole = w.slice(0, -18) || '0'
-  const frac = w.slice(-18).replace(/0+$/, '')
+function unitsToUsdcString(amount) {
+  const a = amount.padStart(7, '0')
+  const whole = a.slice(0, -6) || '0'
+  const frac = a.slice(-6).replace(/0+$/, '')
   return frac ? `${whole}.${frac}` : whole
 }
 
@@ -98,15 +96,15 @@ export async function checkIntent(auth, email) {
   const intent = auth.payIntents?.[email]
   if (!intent || !PAYMENTS_ENABLED) return { paid: false }
   if (Date.now() - intent.createdAt > INTENT_TTL_MS) return { paid: false, expired: true }
-  const want = BigInt(intent.wei)
+  const want = BigInt(intent.amount)
   const minTs = Math.floor(intent.createdAt / 1000) - 600
   if (!auth.usedTx) auth.usedTx = []
-  const txs = await incomingTxs()
+  const txs = await incomingTransfers()
   const hit = txs.find((t) => {
     if (auth.usedTx.includes(t.hash)) return false
     if (parseInt(t.timeStamp, 10) < minTs) return false
     const v = BigInt(t.value)
-    return v >= want && v <= want + OVERPAY_BUFFER_WEI
+    return v >= want && v <= want + OVERPAY_BUFFER
   })
   if (!hit) return { paid: false }
   auth.usedTx.push(hit.hash)

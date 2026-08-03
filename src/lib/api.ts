@@ -10,12 +10,16 @@ export interface Auth {
 
 export interface PaymentInfo {
   address: string
-  wei: string
-  eth: string
+  /** USDC base units (6 decimals) */
+  amount: string
+  /** human-readable exact USDC amount, e.g. "5.000137" */
+  usdc: string
   usd: number
   plan: 'month' | 'year'
   days: number
   expiresAt: number
+  /** EIP-681 URI for wallet QR codes */
+  qr: string
 }
 
 export type RegisterResult =
