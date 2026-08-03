@@ -300,12 +300,17 @@ async function handleApi(req, res, path) {
     const file = join(TTS_DIR, createHash('sha1').update(text).digest('hex') + '.mp3')
     if (!existsSync(file)) {
       await mkdir(TTS_DIR, { recursive: true })
-      try {
-        await execFileAsync(
+      let gen = ttsInflight.get(file)
+      if (!gen) {
+        gen = execFileAsync(
           TTS_PYTHON,
           ['-m', 'edge_tts', '--voice', TTS_VOICE, '--text', text, '--write-media', file],
           { timeout: 30_000 },
-        )
+        ).finally(() => ttsInflight.delete(file))
+        ttsInflight.set(file, gen)
+      }
+      try {
+        await gen
       } catch (e) {
         console.error('tts failed:', e.message)
         return json(res, 502, { error: 'TTS failed' })
@@ -322,6 +327,10 @@ async function handleApi(req, res, path) {
 }
 
 // ─── server ─────────────────────────────────────────────────────────────────
+
+// one edge-tts generation per word at a time — concurrent requests for the
+// same uncached audio share a single subprocess instead of stacking up
+const ttsInflight = new Map()
 
 createServer(async (req, res) => {
   const path = new URL(req.url, 'http://x').pathname

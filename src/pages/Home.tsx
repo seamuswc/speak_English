@@ -21,6 +21,7 @@ import {
   Import,
   Layers,
   Library as LibraryIcon,
+  Loader2,
   Plus,
   RotateCcw,
   Search,
@@ -508,9 +509,43 @@ function ReviewView({
     [card, revealed, onSimple],
   )
 
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const audioTextRef = useRef('')
+  const [audioLoading, setAudioLoading] = useState(false)
+
+  // preload the current card's audio in the background as soon as the card
+  // appears — reveal is instant when it finishes in time, and grading never
+  // waits for it (any key skips ahead freely)
+  useEffect(() => {
+    if (!card) return
+    const text = card.front
+    audioTextRef.current = text
+    setAudioLoading(true)
+    const a = new Audio()
+    audioRef.current = a
+    const done = () => setAudioLoading(false)
+    a.addEventListener('canplay', done)
+    a.addEventListener('error', done)
+    a.src = `/api/tts?text=${encodeURIComponent(text)}`
+    a.load()
+    return () => {
+      a.pause()
+      a.removeAttribute('src') // aborts the in-flight download
+    }
+  }, [card?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const playAudio = useCallback((text: string) => {
-    const a = new Audio(`/api/tts?text=${encodeURIComponent(text)}`)
-    a.play().catch(() => {})
+    const a = audioRef.current
+    if (a && audioTextRef.current === text) {
+      // already preloaded (or still loading — play() fires once buffered)
+      a.currentTime = 0
+      a.play().catch(() => {})
+      return
+    }
+    const fresh = new Audio(`/api/tts?text=${encodeURIComponent(text)}`)
+    audioRef.current = fresh
+    audioTextRef.current = text
+    fresh.play().catch(() => {})
   }, [])
 
   // reveal + auto-play pronunciation (called from click/key handlers so the
@@ -552,16 +587,16 @@ function ReviewView({
       }
 
       if (grading === 'simple') {
-        // revealed: space = correct, any other key = wrong
+        // revealed: space or → = correct, any other key = wrong
         if (['Shift', 'Control', 'Alt', 'Meta', 'Tab', 'Escape', 'CapsLock'].includes(e.key)) return
         if (e.key.startsWith('F') && e.key.length > 1) return // F1–F12
         e.preventDefault()
-        if (e.key === ' ') pickSimple(true)
+        if (e.key === ' ' || e.key === 'ArrowRight') pickSimple(true)
         else pickSimple(false)
       } else {
         if (e.key === '1') pick('again')
         if (e.key === '2') pick('hard')
-        if (e.key === '3' || e.key === ' ') {
+        if (e.key === '3' || e.key === ' ' || e.key === 'ArrowRight') {
           e.preventDefault()
           pick('good')
         }
@@ -647,9 +682,13 @@ function ReviewView({
             <button
               onClick={() => playAudio(card.front)}
               className="rounded-full p-1.5 text-stone-400 transition-colors hover:bg-emerald-50 hover:text-emerald-700"
-              title="発音を聞く"
+              title={audioLoading ? '音声を読み込み中…' : '発音を聞く'}
             >
-              <Volume2 className="h-4 w-4" />
+              {audioLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Volume2 className="h-4 w-4" />
+              )}
             </button>
             <LevelPill level={card.level} />
           </span>
@@ -698,7 +737,7 @@ function ReviewView({
                 {formatInterval(intervalForLevel(Math.min(FLUENT_LEVEL, card.level + 1)))}後
               </span>
               <kbd className="mt-1 hidden rounded bg-white/60 px-1 text-[10px] text-stone-400 sm:inline">
-                スペース
+                スペース / →
               </kbd>
             </button>
           </div>
@@ -730,6 +769,12 @@ function ReviewView({
           </div>
         )}
       </div>
+
+      {audioLoading && (
+        <p className="flex items-center justify-center gap-1.5 text-center text-xs text-stone-400">
+          <Loader2 className="h-3 w-3 animate-spin" /> 音声を読み込み中… そのまま進められます
+        </p>
+      )}
 
       {card.kind === 'conjugation' && card.base && (
         <p className="text-center text-xs text-stone-400">
