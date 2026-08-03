@@ -1677,8 +1677,8 @@ function PayScreen({
               </Button>
               <p className="text-center text-[11px] leading-relaxed text-stone-400">
                 <strong>USDC または USDT</strong> · Ethereum / Arbitrum / Base / Optimism /
-                Polygon / BSC のどのネットワークでも送れます。表示された金額を
-                <strong>正確に</strong>送ってください (この金額で照合します)。QRはメインネットUSDC用 ·
+                Polygon / BSC のどのネットワークでも送れます。
+                このアドレスはこのお支払い専用です — 着金を自動で検出します。QRはメインネットUSDC用 ·
                 確認には通常1〜2分かかります。
               </p>
             </>
