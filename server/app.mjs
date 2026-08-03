@@ -101,7 +101,7 @@ function resetEmailHtml(link) {
       </div>
     </div>
     <p style="text-align:center;font-size:11px;color:#a8a29e;margin:16px 0 0;">
-      Speak English — 日本人のための英単語トレーナー
+      Eigobot — 日本人のための英単語トレーナー
     </p>
   </div>
 </body>
@@ -113,7 +113,7 @@ async function sendResetEmail(email, link) {
     method: 'POST',
     headers: { authorization: `Bearer ${RESEND_API_KEY}`, 'content-type': 'application/json' },
     body: JSON.stringify({
-      from: 'Speak English <noreply@support.govoru.xyz>',
+      from: 'Eigobot <noreply@support.eigobot.com>',
       to: [email],
       subject: 'パスワードの再設定 — Speak English',
       html: resetEmailHtml(link),
