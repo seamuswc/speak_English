@@ -1489,14 +1489,24 @@ function AuthScreen({
               {notice && <p className="text-sm text-emerald-700">{notice}</p>}
 
               <Button onClick={submit} disabled={busy || !email.trim() || (mode !== 'forgot' && !password)}>
-                {busy
-                  ? '…'
-                  : mode === 'login'
-                    ? 'ログイン'
-                    : mode === 'register'
-                      ? 'お支払いへ進む'
-                      : '再設定リンクをメールで送る'}
+                {busy ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {mode === 'register' ? 'お支払いの準備中…' : 'しばらくお待ちください…'}
+                  </span>
+                ) : mode === 'login' ? (
+                  'ログイン'
+                ) : mode === 'register' ? (
+                  'お支払いへ進む'
+                ) : (
+                  '再設定リンクをメールで送る'
+                )}
               </Button>
+              {busy && mode === 'register' && (
+                <p className="text-center text-xs text-stone-400">
+                  専用のお支払いアドレスを生成しています — 最大1分ほどかかります。ページを閉じないでください。
+                </p>
+              )}
 
               <p className="text-center text-xs text-stone-400">
                 進捗はアカウントに同期され、どの端末でも続けられます。
