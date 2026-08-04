@@ -71,10 +71,12 @@ import {
   apiPutState,
   apiRegister,
   apiReset,
+  beaconGrades,
   loadAuth,
   saveAuth,
   type Auth,
   type PaymentInfo,
+  type PendingGrade,
 } from '@/lib/api'
 import QRCode from 'qrcode'
 
@@ -225,11 +227,37 @@ function StudyApp({
   }, [])
 
   // push progress to the server (debounced)
+  const pendingGradesRef = useRef<PendingGrade[]>([])
   useEffect(() => {
     if (!auth) return
-    const t = setTimeout(() => apiPutState(auth.token, state).catch(() => {}), 1500)
+    const t = setTimeout(() => {
+      // grades the upcoming PUT already covers; newer ones stay pending
+      const sentUpTo = pendingGradesRef.current.length
+      apiPutState(auth.token, state)
+        .then(() => pendingGradesRef.current.splice(0, sentUpTo))
+        .catch(() => {})
+    }, 1500)
     return () => clearTimeout(t)
   }, [state, auth])
+
+  // tab close / background: beacon any grades the debounced PUT hasn't sent
+  useEffect(() => {
+    if (!auth) return
+    const flush = () => {
+      const pending = pendingGradesRef.current
+      if (pending.length) {
+        beaconGrades(auth.token, pending)
+        pendingGradesRef.current = []
+      }
+    }
+    const onVis = () => document.visibilityState === 'hidden' && flush()
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [auth])
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 15_000)
     return () => clearInterval(t)
@@ -250,6 +278,7 @@ function StudyApp({
   const applyResult = useCallback((card: Card, next: Card, t: number) => {
     const key = todayKey(t)
     lastActionRef.current = { prev: card, key, wasNew: !card.introduced }
+    pendingGradesRef.current.push({ card: next, wasNew: !card.introduced, key })
     setState((s) => ({
       ...s,
       cards: s.cards.map((c) => (c.id === card.id ? next : c)),
@@ -266,6 +295,15 @@ function StudyApp({
     const last = lastActionRef.current
     if (!last) return
     lastActionRef.current = null
+    // drop the matching pending grade so the beacon never replays it
+    const pend = pendingGradesRef.current
+    for (let i = pend.length - 1; i >= 0; i--) {
+      const g = pend[i] as { card?: { id?: string } }
+      if (g.card?.id === last.prev.id) {
+        pend.splice(i, 1)
+        break
+      }
+    }
     setState((s) => ({
       ...s,
       cards: s.cards.map((c) => (c.id === last.prev.id ? last.prev : c)),

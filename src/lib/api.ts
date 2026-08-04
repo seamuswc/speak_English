@@ -103,3 +103,17 @@ export const apiPutState = (token: string, state: AppState) =>
     headers: { authorization: `Bearer ${token}` },
     body: JSON.stringify({ state }),
   })
+
+export interface PendingGrade {
+  card: unknown
+  wasNew: boolean
+  key: string
+}
+
+/** Tab-close flush: beacon any grades still inside the debounce window.
+ *  sendBeacon can't set headers, so the token rides in the query string. */
+export function beaconGrades(token: string, grades: PendingGrade[]) {
+  if (!grades.length || typeof navigator === 'undefined' || !navigator.sendBeacon) return
+  const blob = new Blob([JSON.stringify({ grades })], { type: 'application/json' })
+  navigator.sendBeacon(`/api/grades?token=${encodeURIComponent(token)}`, blob)
+}

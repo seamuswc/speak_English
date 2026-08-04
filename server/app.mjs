@@ -65,7 +65,9 @@ const stateFile = (email) => join(STATES, createHash('sha256').update(email.toLo
 
 function sessionEmail(auth, req) {
   const m = /^Bearer (.+)$/.exec(req.headers.authorization ?? '')
-  const s = m && auth.sessions[m[1]]
+  // fall back to ?token= — sendBeacon (tab-close flush) cannot set headers
+  const t = m ? m[1] : new URL(req.url, 'http://x').searchParams.get('token')
+  const s = t && auth.sessions[t]
   return s && s.exp > Date.now() ? s.email : null
 }
 
@@ -293,6 +295,43 @@ async function handleApi(req, res, path) {
     await mkdir(STATES, { recursive: true })
     await writeFile(stateFile(email), JSON.stringify(body.state))
     return json(res, 200, { ok: true })
+  }
+
+  // tab-close flush: apply a small batch of grades onto the saved state.
+  // Sent via sendBeacon (POST, ?token= query auth) right before the tab dies,
+  // so the last answer(s) inside the 1.5s debounce window are not lost.
+  if (path === '/api/grades' && req.method === 'POST') {
+    const email = sessionEmail(auth, req)
+    if (!email) return json(res, 401, { error: 'Not signed in' })
+    const u = auth.users.find((x) => x.email === email)
+    if (PAYMENTS_ENABLED && !subscriptionActive(u))
+      return json(res, 402, { error: 'subscription expired', subUntil: u?.subUntil ?? 0 })
+    const grades = Array.isArray(body.grades) ? body.grades.slice(0, 200) : null
+    if (!grades) return json(res, 400, { error: 'Bad grades' })
+    const file = stateFile(email)
+    let state
+    try {
+      state = JSON.parse(await readFile(file, 'utf8'))
+    } catch {
+      return json(res, 200, { ok: true, applied: 0 }) // no state yet — next full sync wins
+    }
+    if (!Array.isArray(state.cards)) return json(res, 200, { ok: true, applied: 0 })
+    let applied = 0
+    for (const g of grades) {
+      if (!g?.card?.id || typeof g.key !== 'string') continue
+      const i = state.cards.findIndex((c) => c.id === g.card.id)
+      if (i === -1) continue
+      state.cards[i] = g.card
+      state.history = state.history ?? {}
+      state.history[g.key] = (state.history[g.key] ?? 0) + 1
+      if (g.wasNew) {
+        state.introLog = state.introLog ?? {}
+        state.introLog[g.key] = (state.introLog[g.key] ?? 0) + 1
+      }
+      applied++
+    }
+    if (applied) await writeFile(file, JSON.stringify(state))
+    return json(res, 200, { ok: true, applied })
   }
 
   if (path === '/api/tts' && req.method === 'GET') {
