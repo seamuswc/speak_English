@@ -2,7 +2,7 @@
 // Zero-dependency (Node 20+). Passwords: scrypt. Sessions/reset: random tokens.
 // Storage: server/data/auth.json + server/data/states/<hash>.json
 import { createServer } from 'node:http'
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { readFile, writeFile, mkdir, appendFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join, extname, normalize, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -371,12 +371,25 @@ async function handleApi(req, res, path) {
 
 // ─── server ─────────────────────────────────────────────────────────────────
 
+// ─── access log (one JSON line per request, powers the weekly traffic email) ─
+const ACCESS_LOG = join(DATA, 'access.log')
+function logAccess(req, res, path) {
+  res.on('finish', () => {
+    if (path.startsWith('/assets/') || path === '/favicon.ico') return // static noise
+    const ip =
+      (req.headers['x-forwarded-for'] ?? '').split(',')[0].trim() || req.socket.remoteAddress
+    const line = JSON.stringify({ t: Date.now(), ip, m: req.method, p: path, s: res.statusCode })
+    appendFile(ACCESS_LOG, line + '\n').catch(() => {})
+  })
+}
+
 // one edge-tts generation per word at a time — concurrent requests for the
 // same uncached audio share a single subprocess instead of stacking up
 const ttsInflight = new Map()
 
 createServer(async (req, res) => {
   const path = new URL(req.url, 'http://x').pathname
+  logAccess(req, res, path)
   try {
     if (path.startsWith('/api/')) return await handleApi(req, res, path)
 
