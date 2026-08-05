@@ -270,6 +270,22 @@ function StudyApp({
   const todaysNew = useMemo(() => fresh.slice(0, quotaLeft), [fresh, quotaLeft])
   const queue = useMemo(() => [...due, ...todaysNew], [due, todaysNew])
 
+  // prefetch audio for the next few cards in the queue — each file is ~10KB,
+  // so by the time the user advances the mp3 is already in the browser cache
+  // and playback is instant (no per-card network wait through the proxy)
+  const prefetchedRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    for (const c of queue.slice(0, 4)) {
+      const t = c.front
+      if (prefetchedRef.current.has(t)) continue
+      prefetchedRef.current.add(t)
+      const a = new Audio()
+      a.preload = 'auto'
+      a.src = `/api/tts?text=${encodeURIComponent(t)}`
+      a.load()
+    }
+  }, [queue])
+
   const streak = useMemo(() => streakDays(state.history, now), [state.history, now])
   const reviewsToday = state.history[todayKey(now)] ?? 0
 
