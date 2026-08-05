@@ -275,7 +275,7 @@ function StudyApp({
   // and playback is instant (no per-card network wait through the proxy)
   const prefetchedRef = useRef<Set<string>>(new Set())
   useEffect(() => {
-    for (const c of queue.slice(0, 4)) {
+    for (const c of queue.slice(0, 20)) {
       const t = c.front
       if (prefetchedRef.current.has(t)) continue
       prefetchedRef.current.add(t)

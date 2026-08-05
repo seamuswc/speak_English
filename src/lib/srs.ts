@@ -313,7 +313,7 @@ export function demoState(): AppState {
     })),
     history: {},
     introLog: {},
-    newPerDay: 20,
+    newPerDay: 5,
     grading: 'simple',
   }
 }
@@ -366,7 +366,7 @@ export function loadState(account: string): AppState {
           cards: parsed.cards,
           history: parsed.history ?? {},
           introLog: parsed.introLog ?? {},
-          newPerDay: parsed.newPerDay ?? 20,
+          newPerDay: parsed.newPerDay ?? 5,
           grading: parsed.grading ?? 'simple',
         }
       }
@@ -378,7 +378,7 @@ export function loadState(account: string): AppState {
     cards: seedCards(),
     history: {},
     introLog: {},
-    newPerDay: 20,
+    newPerDay: 5,
     grading: 'simple',
   }
   saveState(seeded, account)
