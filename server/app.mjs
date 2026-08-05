@@ -42,6 +42,8 @@ const MIME = {
   '.ico': 'image/x-icon',
   '.woff': 'font/woff',
   '.woff2': 'font/woff2',
+  '.txt': 'text/plain; charset=utf-8',
+  '.xml': 'application/xml; charset=utf-8',
 }
 
 // ─── auth store ─────────────────────────────────────────────────────────────
@@ -245,7 +247,7 @@ async function handleApi(req, res, path) {
       const t = token()
       auth.resets[t] = { email, exp: Date.now() + 3600 * 1000 }
       await saveAuth(auth)
-      const link = `http://${req.headers.host}/#reset=${t}`
+      const link = `https://${req.headers.host}/#reset=${t}`
       try {
         await sendResetEmail(email, link)
       } catch (e) {
@@ -385,7 +387,10 @@ createServer(async (req, res) => {
     try {
       data = await readFile(file)
     } catch {
-      data = await readFile(join(ROOT, 'index.html')) // SPA fallback
+      // no SPA fallback: the app has a single route (/), so unknown paths are
+      // real 404s — keeps search engines from indexing infinite duplicate URLs
+      res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
+      return res.end('Not found')
     }
     res.writeHead(200, {
       'content-type': MIME[extname(file)] ?? 'application/octet-stream',
