@@ -153,6 +153,17 @@ export async function checkIntent(auth, email) {
   if (!hit) return { paid: false }
   auth.usedTx.push(hit.hash)
   const now = Date.now()
+  // payment ledger — powers revenue numbers in the weekly report
+  if (!auth.payments) auth.payments = []
+  auth.payments.push({
+    email,
+    plan: intent.plan,
+    usd: p.usd,
+    symbol: hit.symbol,
+    chain: hit.chain,
+    tx: hit.hash,
+    t: now,
+  })
   if (auth.pendingRegs?.[email]) {
     // completing registration: only NOW does the account get created
     const pending = auth.pendingRegs[email]

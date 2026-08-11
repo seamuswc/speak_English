@@ -688,7 +688,7 @@ function ReviewView({
   const preview = gradePreview(card)
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4" onClick={() => reveal()}>
       <div className="flex items-center justify-between text-sm text-stone-500">
         <span>
           復習 {dueCount} 枚
@@ -702,7 +702,10 @@ function ReviewView({
         </span>
         <span className="flex items-center gap-3 tabular-nums">
           <button
-            onClick={() => onToggleGrading(grading === 'simple' ? 'grades' : 'simple')}
+            onClick={(e) => {
+              e.stopPropagation()
+              onToggleGrading(grading === 'simple' ? 'grades' : 'simple')
+            }}
             className="rounded-full border border-stone-200 bg-white px-2 py-0.5 text-xs text-stone-500 hover:border-emerald-400 hover:text-emerald-700"
             title="採点方式を切り替え"
           >
@@ -734,7 +737,10 @@ function ReviewView({
           )}
           <span className="ml-auto flex items-center gap-2">
             <button
-              onClick={() => playAudio(card.front)}
+              onClick={(e) => {
+                e.stopPropagation()
+                playAudio(card.front)
+              }}
               className="rounded-full p-1.5 text-stone-400 transition-colors hover:bg-emerald-50 hover:text-emerald-700"
               title={audioLoading ? '音声を読み込み中…' : '発音を聞く'}
             >
@@ -760,10 +766,29 @@ function ReviewView({
             </div>
           ) : (
             <div className="mt-6 flex items-center justify-center gap-1 text-sm text-stone-400">
-              <Eye className="h-4 w-4" /> タップかスペースで答えを表示 · f/h/p で音声
+              <Eye className="h-4 w-4" /> 画面のどこでもタップで答えを表示 · f/h/p で音声
             </div>
           )}
         </button>
+
+        {revealed && (
+          <div className="flex justify-center px-4 pb-4">
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                playAudio(card.front)
+              }}
+              className="inline-flex items-center gap-2 rounded-full border border-emerald-300 bg-emerald-50 px-6 py-3 text-base font-medium text-emerald-700 shadow-sm transition-colors hover:bg-emerald-100"
+            >
+              {audioLoading ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <Volume2 className="h-5 w-5" />
+              )}
+              音声をもう一度聞く
+            </button>
+          </div>
+        )}
 
         {grading === 'simple' ? (
           <div className="grid grid-cols-2 gap-2 border-t border-stone-100 p-4">
