@@ -1,6 +1,8 @@
-// ─── Speak English SRS engine ──────────────────────────────────────────────
+// ─── Speak English SRS engine — WaniKani timing ────────────────────────────
 // Every card — a bare word OR an individual conjugation of a word — is its own
-// independent card with its own level on the 0 → 7 fluency ladder.
+// independent card climbing the WaniKani ladder:
+//   Apprentice 1-4 (4h → 8h → 23h → 47h) → Guru 1-2 (7d → 14d)
+//   → Master (30d) → Enlightened (120d) → Burned (retired, never due again).
 //
 // Built for decks of THOUSANDS: brand-new cards are not "due" — they are
 // introduced gradually at a daily quota, while due reviews always come first.
@@ -19,7 +21,7 @@ export interface Card {
    *  word share a base but are still separate cards with separate levels. */
   base?: string
   note?: string
-  level: number // 0..FLUENT_LEVEL
+  level: number // 0..BURN_LEVEL (8 = Burned, retired from the queue)
   due: number // epoch ms (only meaningful once introduced)
   /** false = still in the "new" backlog, waiting for the daily quota */
   introduced: boolean
@@ -30,35 +32,45 @@ export interface Card {
 
 export type Grade = 'again' | 'hard' | 'good' | 'easy'
 
-export const FLUENT_LEVEL = 7
+/** WaniKani-style ladder: 8 passes to burn a card. Level 8 = Burned — the
+ *  card is retired and never scheduled again. */
+export const BURN_LEVEL = 8
+export const FLUENT_LEVEL = BURN_LEVEL
 
 export const LEVEL_NAMES = [
-  '新出',
-  '見た',
-  '学習中',
-  '見覚え',
-  '知ってる',
-  '強い',
-  '習得',
-  '流暢',
+  '見習い 1',
+  '見習い 2',
+  '見習い 3',
+  '見習い 4',
+  '達人 1',
+  '達人 2',
+  'マスター',
+  '悟り',
+  '定着',
 ] as const
 
 // Minutes a card waits after reaching each level (index = level just reached).
+// Mirrors WaniKani exactly: 4h → 8h → 23h → 47h → 7d → 14d → 30d → 120d.
+// (23h/47h are "1d"/"2d" minus an hour so reviews land in the same daily slot.)
+// Level 8 (Burned) has no interval — the card is retired.
 export const LEVEL_INTERVALS_MIN = [
-  10, // 0  New        → 10 min
-  240, // 1  Seen       → 4 h
-  1440, // 2  Learning  → 1 d
-  3600, // 3  Familiar  → 2.5 d
-  8640, // 4  Known     → 6 d
-  20160, // 5  Strong   → 14 d
-  50400, // 6  Mastered → 35 d
-  129600, // 7  Fluent  → 90 d
+  240, // 0  Apprentice 1 → 4 h
+  480, // 1  Apprentice 2 → 8 h
+  1380, // 2  Apprentice 3 → 23 h
+  2820, // 3  Apprentice 4 → 47 h
+  10080, // 4  Guru 1      → 7 d
+  20160, // 5  Guru 2      → 14 d
+  43200, // 6  Master      → 30 d
+  172800, // 7  Enlightened → 120 d
 ]
+
+/** Far-future due date for burned cards (JSON-safe, never actually reached). */
+const BURNED_DUE = 8.64e15
 
 const MIN = 60_000
 
 export function intervalForLevel(level: number): number {
-  const l = Math.max(0, Math.min(FLUENT_LEVEL, level))
+  const l = Math.max(0, Math.min(BURN_LEVEL - 1, level))
   return LEVEL_INTERVALS_MIN[l] * MIN
 }
 
@@ -68,7 +80,7 @@ export function formatInterval(ms: number): string {
   const h = min / 60
   if (h < 24) return `${Math.round(h)}時間`
   const d = h / 24
-  if (d < 30) return d % 1 === 0 ? `${d}日` : `${d.toFixed(1)}日`
+  if (d < 30) return `${Math.round(d * 10) / 10}日`
   const mo = d / 30
   if (mo < 12) return `${Math.round(mo)}か月`
   return `${(mo / 12).toFixed(1)}年`
@@ -82,6 +94,7 @@ export function formatDue(due: number, now: number): string {
 
 /** Apply a grade, returning the next card state. */
 export function gradeCard(card: Card, grade: Grade, now: number): Card {
+  const first = !card.introduced // first grading doubles as the WaniKani "lesson"
   let level: number
   switch (grade) {
     case 'again':
@@ -91,20 +104,21 @@ export function gradeCard(card: Card, grade: Grade, now: number): Card {
       level = card.level // stay put, short re-check
       break
     case 'good':
-      level = Math.min(FLUENT_LEVEL, card.level + 1)
+      level = first ? 0 : Math.min(BURN_LEVEL, card.level + 1)
       break
     case 'easy':
-      level = Math.min(FLUENT_LEVEL, card.level + 2)
+      level = first ? 1 : Math.min(BURN_LEVEL, card.level + 2)
       break
   }
-  let interval = intervalForLevel(level)
+  const burned = level >= BURN_LEVEL
+  let interval = burned ? 0 : intervalForLevel(level)
   if (grade === 'hard') interval = intervalForLevel(Math.max(1, level)) / 2
-  if (grade === 'easy') interval = interval * 1.3
+  if (grade === 'easy') interval = Math.round(interval * 1.3)
   return {
     ...card,
     level,
     introduced: true,
-    due: now + Math.round(interval),
+    due: burned ? BURNED_DUE : now + Math.round(interval),
     reviews: card.reviews + 1,
     lapses: card.lapses + (grade === 'again' ? 1 : 0),
   }
@@ -115,35 +129,51 @@ export function gradePreview(card: Card): Record<Grade, string> {
   const out = {} as Record<Grade, string>
   for (const g of ['again', 'hard', 'good', 'easy'] as Grade[]) {
     const next = gradeCard(card, g, 0)
-    out[g] = formatInterval(next.due)
+    out[g] = next.level >= BURN_LEVEL ? '定着 🔥' : formatInterval(next.due)
   }
   return out
 }
 
-/** Simple +/- scoring: right = +1 level, wrong = −1 level and back in 10 min. */
+/** Simple +/- scoring, WaniKani penalties: right = +1 stage (the first pass of
+ *  a new card doubles as the "lesson" and lands on Apprentice 1 → 4 h);
+ *  wrong = −1 stage for Apprentice, −2 for Guru and above, rescheduled at the
+ *  dropped stage's interval. Passing Enlightened burns the card for good. */
 export function gradeSimple(card: Card, correct: boolean, now: number): Card {
   if (correct) {
-    const level = Math.min(FLUENT_LEVEL, card.level + 1)
+    const level = !card.introduced ? 0 : Math.min(BURN_LEVEL, card.level + 1)
+    const burned = level >= BURN_LEVEL
     return {
       ...card,
       level,
       introduced: true,
-      due: now + intervalForLevel(level),
+      due: burned ? BURNED_DUE : now + intervalForLevel(level),
       reviews: card.reviews + 1,
     }
   }
+  const drop = card.level >= 4 ? 2 : 1 // WaniKani: Guru+ mistakes cost 2 stages
+  const level = Math.max(0, card.level - drop)
   return {
     ...card,
-    level: Math.max(0, card.level - 1),
+    level,
     introduced: true,
-    due: now + 10 * MIN,
+    due: now + intervalForLevel(level),
     reviews: card.reviews + 1,
     lapses: card.lapses + 1,
   }
 }
 
+/** Button labels for simple mode: when the card comes back on right/wrong. */
+export function simplePreview(card: Card): { right: string; wrong: string } {
+  const r = gradeSimple(card, true, 0)
+  const w = gradeSimple(card, false, 0)
+  return {
+    right: r.level >= BURN_LEVEL ? '定着 🔥' : `次は ${formatInterval(r.due)}後`,
+    wrong: `${formatInterval(w.due)}後に再出題`,
+  }
+}
+
 export function isDue(card: Card, now: number): boolean {
-  return card.introduced && card.due <= now
+  return card.introduced && card.level < BURN_LEVEL && card.due <= now
 }
 
 export function dueCards(cards: Card[], now: number): Card[] {
@@ -158,7 +188,9 @@ export function newCards(cards: Card[]): Card[] {
 }
 
 export function nextDue(cards: Card[], now: number): number | null {
-  const future = cards.filter((c) => c.introduced && c.due > now).map((c) => c.due)
+  const future = cards
+    .filter((c) => c.introduced && c.level < BURN_LEVEL && c.due > now)
+    .map((c) => c.due)
   return future.length ? Math.min(...future) : null
 }
 

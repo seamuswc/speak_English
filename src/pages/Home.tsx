@@ -43,12 +43,11 @@ import {
   findVerb,
   fluencyPercent,
   formatDue,
-  formatInterval,
   gradeCard,
   gradePreview,
   gradeSimple,
   groupMastery,
-  intervalForLevel,
+  simplePreview,
   loadState,
   makeCard,
   newCards,
@@ -108,7 +107,7 @@ function LevelPill({ level }: { level: number }) {
     <span
       className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${LEVEL_COLORS[level]}`}
     >
-      L{level} · {LEVEL_NAMES[level]}
+      {LEVEL_NAMES[level]}
     </span>
   )
 }
@@ -686,6 +685,7 @@ function ReviewView({
   }
 
   const preview = gradePreview(card)
+  const simple = simplePreview(card)
 
   return (
     <div className="flex flex-col gap-4" onClick={() => reveal()}>
@@ -799,7 +799,7 @@ function ReviewView({
             >
               <span className="text-base">✗ 不正解</span>
               <span className="mt-0.5 text-xs font-normal opacity-70">
-                −1 レベル · 10分後に再出題
+                {simple.wrong}
               </span>
               <kbd className="mt-1 hidden rounded bg-white/60 px-1 text-[10px] text-stone-400 sm:inline">
                 任意のキー
@@ -812,8 +812,7 @@ function ReviewView({
             >
               <span className="text-base">✓ 正解</span>
               <span className="mt-0.5 text-xs font-normal opacity-70 tabular-nums">
-                +1 レベル · 次は{' '}
-                {formatInterval(intervalForLevel(Math.min(FLUENT_LEVEL, card.level + 1)))}後
+                {simple.right}
               </span>
               <kbd className="mt-1 hidden rounded bg-white/60 px-1 text-[10px] text-stone-400 sm:inline">
                 スペース / →
