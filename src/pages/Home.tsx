@@ -793,9 +793,13 @@ function ReviewView({
         {grading === 'simple' ? (
           <div className="grid grid-cols-2 gap-2 border-t border-stone-100 p-4">
             <button
-              disabled={!revealed}
-              onClick={() => pickSimple(false)}
-              className="flex flex-col items-center rounded-lg border border-red-200 bg-red-50 px-2 py-3 text-sm font-medium text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
+              aria-disabled={!revealed}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (!revealed) reveal()
+                else pickSimple(false)
+              }}
+              className={`flex flex-col items-center rounded-lg border border-red-200 bg-red-50 px-2 py-3 text-sm font-medium text-red-700 transition-colors hover:bg-red-100 ${!revealed ? 'opacity-40' : ''}`}
             >
               <span className="text-base">✗ 不正解</span>
               <span className="mt-0.5 text-xs font-normal opacity-70">
@@ -806,9 +810,13 @@ function ReviewView({
               </kbd>
             </button>
             <button
-              disabled={!revealed}
-              onClick={() => pickSimple(true)}
-              className="flex flex-col items-center rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-3 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
+              aria-disabled={!revealed}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (!revealed) reveal()
+                else pickSimple(true)
+              }}
+              className={`flex flex-col items-center rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-3 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-100 ${!revealed ? 'opacity-40' : ''}`}
             >
               <span className="text-base">✓ 正解</span>
               <span className="mt-0.5 text-xs font-normal opacity-70 tabular-nums">
@@ -831,9 +839,13 @@ function ReviewView({
             ).map(([g, label, key, cls]) => (
               <button
                 key={g}
-                disabled={!revealed}
-                onClick={() => pick(g)}
-                className={`flex flex-col items-center rounded-lg border px-2 py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${cls}`}
+                aria-disabled={!revealed}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (!revealed) reveal()
+                  else pick(g)
+                }}
+                className={`flex flex-col items-center rounded-lg border px-2 py-2.5 text-sm font-medium transition-colors ${!revealed ? 'opacity-40' : ''} ${cls}`}
               >
                 <span>{label}</span>
                 <span className="mt-0.5 text-xs font-normal opacity-70 tabular-nums">
