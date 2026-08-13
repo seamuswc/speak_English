@@ -97,6 +97,10 @@ const KIND_STYLES: Record<CardKind, string> = {
   conjugation: 'bg-violet-100 text-violet-800 border-violet-200',
 }
 
+/** True on phones/tablets (no physical keyboard) — hides keyboard hints. */
+const IS_TOUCH =
+  typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
+
 const KIND_LABELS: Record<CardKind, string> = {
   word: '単語',
   conjugation: '活用形',
@@ -711,7 +715,7 @@ function ReviewView({
           >
             {grading === 'simple' ? '+/− 採点' : '4段階採点'}
           </button>
-          <span className="hidden text-xs text-stone-300 sm:inline" title="直前の採点を取り消し">
+          <span className="key-hint hidden text-xs text-stone-300 sm:inline" title="直前の採点を取り消し">
             ⌫ やり直し
           </span>
           このセッション {sessionCount} 枚 · 今日 {reviewsToday} 枚
@@ -766,7 +770,8 @@ function ReviewView({
             </div>
           ) : (
             <div className="mt-6 flex items-center justify-center gap-1 text-sm text-stone-400">
-              <Eye className="h-4 w-4" /> 画面のどこでもタップで答えを表示 · f/h/p で音声
+              <Eye className="h-4 w-4" />{' '}
+              {IS_TOUCH ? '画面のどこでもタップで答えを表示' : '画面のどこでもタップで答えを表示 · f/h/p で音声'}
             </div>
           )}
         </button>

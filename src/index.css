@@ -73,3 +73,10 @@
     @apply bg-background text-foreground;
   }
 }
+/* Hide keyboard hints on touch devices (no physical keyboard) */
+@media (pointer: coarse) {
+  kbd,
+  .key-hint {
+    display: none !important;
+  }
+}
