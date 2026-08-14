@@ -9,17 +9,11 @@ export interface Auth {
 }
 
 export interface PaymentInfo {
-  address: string
-  /** USDC base units (6 decimals) */
-  amount: string
-  /** human-readable exact USDC amount, e.g. "5.000137" */
-  usdc: string
-  usd: number
+  /** Stripe Checkout URL to redirect the customer */
+  url: string
+  sessionId: string
   plan: 'month' | 'year'
   days: number
-  expiresAt: number
-  /** EIP-681 URI for wallet QR codes */
-  qr: string
 }
 
 export type RegisterResult =
@@ -52,28 +46,56 @@ async function call<T>(path: string, opts: RequestInit = {}): Promise<T> {
   return j as T
 }
 
-export const apiRegister = (email: string, password: string, plan: 'month' | 'year' = 'month') =>
+export const apiRegister = (email: string, password: string) =>
   call<RegisterResult>('/api/register', {
     method: 'POST',
-    body: JSON.stringify({ email, password, plan }),
+    body: JSON.stringify({ email, password }),
   })
 
-export const apiPayCheck = (email: string | null, token: string | null) =>
-  call<{ paid: boolean; token?: string | null; email?: string; subUntil?: number; expired?: boolean }>(
+export const apiPayCheck = (email: string | null, token: string | null, sessionId: string) =>
+  call<{ paid: boolean; token?: string | null; email?: string; subUntil?: number }>(
     '/api/pay/check',
     {
       method: 'POST',
       headers: token ? { authorization: `Bearer ${token}` } : {},
-      body: JSON.stringify(email ? { email } : {}),
+      body: JSON.stringify({ email, sessionId }),
     },
   )
 
-export const apiPayRenew = (token: string, plan: 'month' | 'year') =>
+export const apiPayRenew = (token: string, plan: 'month' | 'year' = 'month') =>
   call<{ payment: PaymentInfo }>('/api/pay/renew', {
     method: 'POST',
     headers: { authorization: `Bearer ${token}` },
     body: JSON.stringify({ plan }),
   })
+
+// ─── Stripe redirect handoff ────────────────────────────────────────────────
+// Before redirecting to Stripe Checkout we stash { email, sessionId } so the
+// success_url return (/?session_id=…) can be matched to this browser.
+
+const PENDING_KEY = 'speak-english:pendingPay'
+
+export interface PendingPay {
+  email: string
+  sessionId: string
+}
+
+export function savePendingPay(p: PendingPay) {
+  localStorage.setItem(PENDING_KEY, JSON.stringify(p))
+}
+
+export function loadPendingPay(): PendingPay | null {
+  try {
+    const p = JSON.parse(localStorage.getItem(PENDING_KEY) ?? 'null')
+    return p && p.email && p.sessionId ? p : null
+  } catch {
+    return null
+  }
+}
+
+export function clearPendingPay() {
+  localStorage.removeItem(PENDING_KEY)
+}
 
 export const apiLogin = (email: string, password: string) =>
   call<Auth>('/api/login', { method: 'POST', body: JSON.stringify({ email, password }) })

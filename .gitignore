@@ -4,3 +4,4 @@ bot/data
 *.log
 .DS_Store
 server/data
+server/.env

@@ -3,8 +3,6 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@noble/curves": "2.2.0",
-    "@noble/hashes": "2.2.0",
-    "@scure/bip32": "2.2.0"
+    "stripe": "^16.0.0"
   }
 }

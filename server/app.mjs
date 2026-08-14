@@ -1,5 +1,5 @@
 // Speak English server: static web app + auth API + progress sync + password recovery.
-// Zero-dependency (Node 20+). Passwords: scrypt. Sessions/reset: random tokens.
+// Only dependency: stripe (payments). Passwords: scrypt. Sessions/reset: random tokens.
 // Storage: server/data/auth.json + server/data/states/<hash>.json
 import { createServer } from 'node:http'
 import { readFile, writeFile, mkdir, appendFile } from 'node:fs/promises'
@@ -9,12 +9,13 @@ import { fileURLToPath } from 'node:url'
 import { scryptSync, randomBytes, timingSafeEqual, createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import './env.mjs'
 import { createReadStream } from 'node:fs'
 import {
   PAYMENTS_ENABLED,
   PLANS,
-  checkIntent,
-  createIntent,
+  verifyCheckout,
+  createCheckout,
   subscriptionActive,
 } from './pay.mjs'
 
@@ -153,6 +154,15 @@ const readBody = (req) =>
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+// public origin for Stripe redirect URLs — behind an https reverse proxy in
+// production (x-forwarded-proto), plain http for local development
+function originOf(req) {
+  const host = req.headers.host ?? 'localhost'
+  const proto =
+    req.headers['x-forwarded-proto'] ?? (/^(localhost|127\.)/.test(host) ? 'http' : 'https')
+  return `${proto}://${host}`
+}
+
 async function handleApi(req, res, path) {
   const body = req.method === 'POST' || req.method === 'PUT' ? await readBody(req) : {}
   const auth = await loadAuth()
@@ -164,13 +174,12 @@ async function handleApi(req, res, path) {
     if (password.length < 6) return json(res, 400, { error: 'パスワードは6文字以上にしてください' })
     if (auth.users.some((u) => u.email === email)) return json(res, 409, { error: 'このアカウントは既に存在します — ログインしてください' })
     const salt = randomBytes(16).toString('hex')
-    // paid registration: no account row until the payment is confirmed on-chain —
-    // credentials live in pendingRegs and are promoted by checkIntent
+    // paid registration: no account row until the payment is confirmed —
+    // credentials live in pendingRegs and are promoted by verifyCheckout
     if (PAYMENTS_ENABLED) {
       if (!auth.pendingRegs) auth.pendingRegs = {}
       auth.pendingRegs[email] = { email, salt, pass: hashPassword(password, salt), createdAt: Date.now() }
-      const plan = body.plan === 'year' ? 'year' : 'month'
-      const payment = await createIntent(auth, email, plan)
+      const payment = await createCheckout(auth, email, 'month', originOf(req))
       await saveAuth(auth)
       return json(res, 200, { paymentRequired: true, payment, email })
     }
@@ -199,13 +208,15 @@ async function handleApi(req, res, path) {
     return json(res, 200, out)
   }
 
-  // payment status — registration path (email in body) or renewal path (Bearer)
+  // payment status — verify Stripe Checkout session and activate subscription
   if (path === '/api/pay/check' && req.method === 'POST') {
     if (!PAYMENTS_ENABLED) return json(res, 400, { error: 'payments disabled' })
     const authed = sessionEmail(auth, req)
     const email = authed ?? (body.email ?? '').trim().toLowerCase()
     if (!email) return json(res, 400, { error: 'no email' })
-    const r = await checkIntent(auth, email)
+    const sessionId = body.sessionId
+    if (!sessionId) return json(res, 400, { error: 'no sessionId' })
+    const r = await verifyCheckout(auth, email, sessionId)
     if (!r.paid) return json(res, 200, r)
     let t = null
     if (!authed) {
@@ -216,13 +227,12 @@ async function handleApi(req, res, path) {
     return json(res, 200, { paid: true, token: t, email, subUntil: r.subUntil })
   }
 
-  // new payment intent for a signed-in user renewing an expired subscription
+  // new Stripe Checkout session for a signed-in user renewing an expired subscription
   if (path === '/api/pay/renew' && req.method === 'POST') {
     if (!PAYMENTS_ENABLED) return json(res, 400, { error: 'payments disabled' })
     const email = sessionEmail(auth, req)
     if (!email) return json(res, 401, { error: 'ログインしていません' })
-    const plan = body.plan === 'year' ? 'year' : 'month'
-    const payment = await createIntent(auth, email, plan)
+    const payment = await createCheckout(auth, email, 'month', originOf(req))
     await saveAuth(auth)
     return json(res, 200, { payment })
   }
