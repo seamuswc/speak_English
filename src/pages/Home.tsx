@@ -777,16 +777,20 @@ function ReviewView({
 
         <button
           onClick={() => reveal()}
-          className="block w-full cursor-pointer px-6 py-12 text-center"
+          className="block w-full cursor-pointer px-4 py-12 text-center sm:px-6 sm:py-16"
         >
-          <div className="text-4xl font-semibold tracking-tight">{card.front}</div>
+          <div className="break-words text-5xl font-semibold leading-tight tracking-tight sm:text-6xl">
+            {card.front}
+          </div>
           {revealed ? (
             <div className="mt-6">
-              <div className="text-xl text-stone-600">{card.back}</div>
-              {card.note && <div className="mt-2 text-sm text-stone-400">{card.note}</div>}
+              <div className="break-words text-2xl leading-snug text-stone-600 sm:text-3xl">
+                {card.back}
+              </div>
+              {card.note && <div className="mt-2 text-base text-stone-400">{card.note}</div>}
             </div>
           ) : (
-            <div className="mt-6 flex items-center justify-center gap-1 text-sm text-stone-400">
+            <div className="mt-6 flex items-center justify-center gap-1 text-base text-stone-400">
               <Eye className="h-4 w-4" />{' '}
               {IS_TOUCH ? '画面のどこでもタップで答えを表示' : '画面のどこでもタップで答えを表示 · f/h/p で音声'}
             </div>
@@ -821,9 +825,9 @@ function ReviewView({
                 if (!revealed) reveal()
                 else pickSimple(false)
               }}
-              className={`flex flex-col items-center rounded-lg border border-red-200 bg-red-50 px-2 py-3 text-sm font-medium text-red-700 transition-colors hover:bg-red-100 ${!revealed ? 'opacity-40' : ''}`}
+              className={`flex flex-col items-center rounded-lg border border-red-200 bg-red-50 px-2 py-4 text-sm font-medium text-red-700 transition-colors hover:bg-red-100 ${!revealed ? 'opacity-40' : ''}`}
             >
-              <span className="text-base">✗ 不正解</span>
+              <span className="text-lg">✗ 不正解</span>
               <span className="mt-0.5 text-xs font-normal opacity-70">
                 {simple.wrong}
               </span>
@@ -838,9 +842,9 @@ function ReviewView({
                 if (!revealed) reveal()
                 else pickSimple(true)
               }}
-              className={`flex flex-col items-center rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-3 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-100 ${!revealed ? 'opacity-40' : ''}`}
+              className={`flex flex-col items-center rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-4 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-100 ${!revealed ? 'opacity-40' : ''}`}
             >
-              <span className="text-base">✓ 正解</span>
+              <span className="text-lg">✓ 正解</span>
               <span className="mt-0.5 text-xs font-normal opacity-70 tabular-nums">
                 {simple.right}
               </span>
@@ -867,7 +871,7 @@ function ReviewView({
                   if (!revealed) reveal()
                   else pick(g)
                 }}
-                className={`flex flex-col items-center rounded-lg border px-2 py-2.5 text-sm font-medium transition-colors ${!revealed ? 'opacity-40' : ''} ${cls}`}
+                className={`flex flex-col items-center rounded-lg border px-2 py-3 text-base font-medium transition-colors ${!revealed ? 'opacity-40' : ''} ${cls}`}
               >
                 <span>{label}</span>
                 <span className="mt-0.5 text-xs font-normal opacity-70 tabular-nums">

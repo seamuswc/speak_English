@@ -179,6 +179,26 @@ async function handleApi(req, res, path) {
     if (PAYMENTS_ENABLED) {
       if (!auth.pendingRegs) auth.pendingRegs = {}
       auth.pendingRegs[email] = { email, salt, pass: hashPassword(password, salt), createdAt: Date.now() }
+      // re-registering after paying but never completing the redirect (closed
+      // tab, lost browser)? claim the already-paid session instead of
+      // charging the customer twice
+      const prior = Object.entries(auth.stripeSessions ?? {})
+        .filter(([, s]) => s.email === email)
+        .sort((a, b) => b[1].createdAt - a[1].createdAt)
+        .slice(0, 3)
+      for (const [sid] of prior) {
+        try {
+          const r = await verifyCheckout(auth, email, sid)
+          if (r.paid) {
+            const t = token()
+            auth.sessions[t] = { email, exp: Date.now() + 90 * 24 * 3600 * 1000 }
+            await saveAuth(auth)
+            return json(res, 200, { token: t, email, subUntil: r.subUntil })
+          }
+        } catch {
+          // session expired or unknown to Stripe — try the next one
+        }
+      }
       const payment = await createCheckout(auth, email, 'month', originOf(req))
       await saveAuth(auth)
       return json(res, 200, { paymentRequired: true, payment, email })
@@ -397,10 +417,25 @@ function logAccess(req, res, path) {
 // same uncached audio share a single subprocess instead of stacking up
 const ttsInflight = new Map()
 
+// maintenance mode: MAINTENANCE=1 in the environment serves a polite holding
+// page for every page request and 503s the API — flip it on before upgrades
+const MAINTENANCE = process.env.MAINTENANCE === '1'
+const MAINTENANCE_HTML = join(HERE, 'maintenance.html')
+
 createServer(async (req, res) => {
   const path = new URL(req.url, 'http://x').pathname
   logAccess(req, res, path)
   try {
+    if (MAINTENANCE) {
+      if (path.startsWith('/api/'))
+        return json(res, 503, { error: 'ただいまメンテナンス中です — 数分後にもう一度お試しください' })
+      res.writeHead(503, {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-cache',
+        'retry-after': '300',
+      })
+      return res.end(await readFile(MAINTENANCE_HTML))
+    }
     if (path.startsWith('/api/')) return await handleApi(req, res, path)
 
     let p = path === '/' ? '/index.html' : decodeURIComponent(path)

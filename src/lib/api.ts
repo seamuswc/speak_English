@@ -81,7 +81,12 @@ export interface PendingPay {
 }
 
 export function savePendingPay(p: PendingPay) {
-  localStorage.setItem(PENDING_KEY, JSON.stringify(p))
+  try {
+    localStorage.setItem(PENDING_KEY, JSON.stringify(p))
+  } catch {
+    // private browsing / storage disabled — the Stripe return screen will
+    // show a recoverable error instead of crashing the checkout handoff
+  }
 }
 
 export function loadPendingPay(): PendingPay | null {

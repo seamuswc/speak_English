@@ -15,6 +15,8 @@ and a fully Japanese UI.
   server-side edge-tts (`en-US-JennyNeural`), cached on disk.
 - **Accounts**: email + password, server-synced progress, password reset via
   Resend email. Signed-out visitors get a fixed 20-word demo (unsaved).
+- **Payments**: ¥800 / 31 days via Stripe Checkout (credit card). No account
+  is created until Stripe confirms the payment.
 
 ## How reviewing works
 
@@ -30,11 +32,39 @@ and a fully Japanese UI.
 npm install
 npm run dev        # dev server
 npm run build      # → dist/
-node server/app.mjs   # serves dist/ + auth/sync/TTS API on :80
+cd server && npm install   # stripe
+node server/app.mjs        # serves dist/ + auth/sync/payment/TTS API on :80
 ```
 
-Server env: `PORT`, `RESEND_API_KEY` (password-reset email),
-`TTS_PYTHON` (python with edge-tts installed), `TTS_VOICE`.
+Server env (set in the environment or in `server/.env`, which is gitignored):
+
+| Var | Purpose |
+| --- | --- |
+| `PORT` | listen port (default `80`) |
+| `STRIPE_SECRET_KEY` | Stripe secret key (`sk_…`) — enables payments; without it the app is free/open |
+| `SUB_DAYS` | days of access per ¥800 payment (default `31`) |
+| `RESEND_API_KEY` | password-reset email |
+| `TTS_PYTHON` / `TTS_VOICE` | python with edge-tts installed / voice name |
+| `MAINTENANCE` | `1` = serve the maintenance page (`server/maintenance.html`) and 503 the API |
+
+## Payments
+
+Registration stores credentials in `pendingRegs`, creates a Stripe Checkout
+session (¥800, JPY) and redirects the browser to Stripe. After payment, Stripe
+returns to `/?session_id=…`; the app verifies the session server-side
+(`payment_status === 'paid'`, replay-protected) and only then creates the
+account. Renewal extends `subUntil` from the later of now / current expiry.
+If a customer pays but never completes the redirect, re-registering with the
+same email claims the paid session instead of charging twice.
+
+## Maintenance mode
+
+```bash
+sudo systemctl edit eigobot   # add:  [Service]  Environment=MAINTENANCE=1
+sudo systemctl restart eigobot
+# …do the upgrade…
+sudo systemctl revert eigobot && sudo systemctl restart eigobot
+```
 
 ## Telegram bot
 
