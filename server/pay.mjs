@@ -62,27 +62,37 @@ export async function createCheckout(auth, email, plan, origin) {
       subscription_data: { metadata: { email, plan, site: 'eigobot' } },
     })
   } else {
-    session = await getStripe().checkout.sessions.create({
-      ...shared,
-      mode: 'payment',
-      // Japanese local methods: card (incl. JCB), PayPay, konbini (コンビニ払い).
-      // konbini pays asynchronously — access is granted by the webhook on
-      // checkout.session.async_payment_succeeded, not at redirect time
-      payment_method_types: ['card', 'paypay', 'konbini'],
-      line_items: [
-        STRIPE_PRICE_ID
-          ? { price: STRIPE_PRICE_ID, quantity: 1 }
-          : {
-              price_data: {
-                currency: 'jpy',
-                product_data: { name: 'Eigobot — 月額サブスクリプション' },
-                unit_amount: p.jpy, // JPY is a zero-decimal currency: 800 = ¥800
+    const oneTimeSession = (methods) =>
+      getStripe().checkout.sessions.create({
+        ...shared,
+        mode: 'payment',
+        // Japanese local methods: card (incl. JCB), PayPay, konbini (コンビニ払い).
+        // konbini pays asynchronously — access is granted by the webhook on
+        // checkout.session.async_payment_succeeded, not at redirect time
+        payment_method_types: methods,
+        line_items: [
+          STRIPE_PRICE_ID
+            ? { price: STRIPE_PRICE_ID, quantity: 1 }
+            : {
+                price_data: {
+                  currency: 'jpy',
+                  product_data: { name: 'Eigobot — 月額サブスクリプション' },
+                  unit_amount: p.jpy, // JPY is a zero-decimal currency: 800 = ¥800
+                },
+                quantity: 1,
               },
-              quantity: 1,
-            },
-      ],
-      payment_intent_data: { metadata: { email, plan, site: 'eigobot' } },
-    })
+        ],
+        payment_intent_data: { metadata: { email, plan, site: 'eigobot' } },
+      })
+    try {
+      session = await oneTimeSession(['card', 'paypay', 'konbini'])
+    } catch (e) {
+      // PayPay/konbini not activated on the account yet — degrade to card-only
+      // so checkout keeps working either way
+      if (!/payment method type/i.test(e.message ?? '')) throw e
+      console.warn('pay: local payment methods unavailable, falling back to card-only')
+      session = await oneTimeSession(['card'])
+    }
   }
 
   // Track the session so we can verify it later
