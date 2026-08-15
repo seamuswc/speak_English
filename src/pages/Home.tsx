@@ -65,6 +65,7 @@ import {
   apiGetState,
   apiLogin,
   apiLogout,
+  apiPayCancel,
   apiPayCheck,
   apiPayRenew,
   apiPutState,
@@ -78,6 +79,7 @@ import {
   savePendingPay,
   type Auth,
   type PendingGrade,
+  type Plan,
 } from '@/lib/api'
 
 type Tab = 'review' | 'add' | 'library' | 'progress'
@@ -1450,6 +1452,7 @@ function AuthScreen({
   const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [plan, setPlan] = useState<Plan>('sub')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
@@ -1463,7 +1466,7 @@ function AuthScreen({
         await apiForgot(email)
         setNotice('そのメールアドレスにアカウントがあれば、再設定リンクを送信しました。受信トレイを確認してください。')
       } else if (mode === 'register') {
-        const r = await apiRegister(email, password)
+        const r = await apiRegister(email, password, plan)
         if ('paymentRequired' in r) {
           // stash the pending registration, then hand off to Stripe Checkout
           savePendingPay({ email: r.email, sessionId: r.payment.sessionId })
@@ -1474,6 +1477,21 @@ function AuthScreen({
       } else {
         onAuth(await apiLogin(email, password))
       }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'エラーが発生しました')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const cancelAutoRenew = async () => {
+    if (!auth || !window.confirm('自動更新を解約しますか？現在の期間が終わるまで利用できます。')) return
+    setError('')
+    setBusy(true)
+    try {
+      await apiPayCancel(auth.token)
+      onAuth({ ...auth, autoRenew: false })
+      setNotice('自動更新を解約しました。')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'エラーが発生しました')
     } finally {
@@ -1503,6 +1521,18 @@ function AuthScreen({
               <p className="text-xs text-stone-500">
                 進捗はサーバーに同期されます — どの端末からでも続きができます。
               </p>
+              {auth.autoRenew && (
+                <div className="flex items-center justify-between rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-500">
+                  <span>月額プラン自動更新中 (¥800/月)</span>
+                  <button
+                    onClick={cancelAutoRenew}
+                    disabled={busy}
+                    className="font-medium text-red-600 hover:underline disabled:opacity-50"
+                  >
+                    解約する
+                  </button>
+                </div>
+              )}
               <Button variant="outline" onClick={onLogout}>
                 ログアウト
               </Button>
@@ -1561,9 +1591,31 @@ function AuthScreen({
               )}
 
               {mode === 'register' && (
-                <div className="flex items-baseline justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                  <span className="text-2xl font-bold text-emerald-700">¥800</span>
-                  <span className="text-sm text-stone-500">/ 31日間 · クレジットカード (Stripe)</span>
+                <div className="grid grid-cols-2 gap-2">
+                  {(
+                    [
+                      ['sub', '月額プラン', '¥800 / 月', '自動更新 · いつでも解約可能'],
+                      ['month', '1か月のみ', '¥800', '31日間 · 自動更新なし'],
+                    ] as const
+                  ).map(([p, name, price, sub]) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setPlan(p)}
+                      className={`rounded-xl border p-3 text-left transition-colors ${
+                        plan === p
+                          ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500'
+                          : 'border-stone-200 bg-white hover:border-stone-300'
+                      }`}
+                    >
+                      <div className="text-sm font-medium">{name}</div>
+                      <div className="mt-0.5 text-lg font-semibold text-emerald-700">{price}</div>
+                      <div className="text-[11px] text-stone-400">{sub}</div>
+                    </button>
+                  ))}
+                  <p className="col-span-2 text-center text-[11px] text-stone-400">
+                    クレジットカード払い (Stripe · 日本語ページに移動します)
+                  </p>
                 </div>
               )}
 
@@ -1618,12 +1670,13 @@ function PayScreen({
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [plan, setPlan] = useState<Plan>('sub')
 
   const goToCheckout = async () => {
     setBusy(true)
     setError('')
     try {
-      const r = await apiPayRenew(token)
+      const r = await apiPayRenew(token, plan)
       savePendingPay({ email, sessionId: r.payment.sessionId })
       window.location.href = r.payment.url
     } catch (e) {
@@ -1647,9 +1700,28 @@ function PayScreen({
         </div>
 
         <div className="flex flex-col gap-4 rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
-          <div className="flex items-baseline justify-center gap-2 rounded-xl bg-stone-50 p-4">
-            <span className="text-3xl font-bold text-emerald-700">¥800</span>
-            <span className="text-sm text-stone-500">/ 31日間</span>
+          <div className="grid grid-cols-2 gap-2">
+            {(
+              [
+                ['sub', '月額プラン', '¥800 / 月', '自動更新 · いつでも解約可能'],
+                ['month', '1か月のみ', '¥800', '31日間 · 自動更新なし'],
+              ] as const
+            ).map(([p, name, price, sub]) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setPlan(p)}
+                className={`rounded-xl border p-3 text-left transition-colors ${
+                  plan === p
+                    ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500'
+                    : 'border-stone-200 bg-white hover:border-stone-300'
+                }`}
+              >
+                <div className="text-sm font-medium">{name}</div>
+                <div className="mt-0.5 text-lg font-semibold text-emerald-700">{price}</div>
+                <div className="text-[11px] text-stone-400">{sub}</div>
+              </button>
+            ))}
           </div>
           {error && <p className="text-center text-sm text-red-600">{error}</p>}
           <Button onClick={goToCheckout} disabled={busy}>

@@ -16,6 +16,8 @@ import {
   PLANS,
   verifyCheckout,
   createCheckout,
+  cancelSubscription,
+  handleWebhook,
   subscriptionActive,
 } from './pay.mjs'
 
@@ -179,6 +181,7 @@ async function handleApi(req, res, path) {
     if (PAYMENTS_ENABLED) {
       if (!auth.pendingRegs) auth.pendingRegs = {}
       auth.pendingRegs[email] = { email, salt, pass: hashPassword(password, salt), createdAt: Date.now() }
+      const plan = body.plan === 'sub' ? 'sub' : 'month'
       // re-registering after paying but never completing the redirect (closed
       // tab, lost browser)? claim the already-paid session instead of
       // charging the customer twice
@@ -199,7 +202,7 @@ async function handleApi(req, res, path) {
           // session expired or unknown to Stripe — try the next one
         }
       }
-      const payment = await createCheckout(auth, email, 'month', originOf(req))
+      const payment = await createCheckout(auth, email, plan, originOf(req))
       await saveAuth(auth)
       return json(res, 200, { paymentRequired: true, payment, email })
     }
@@ -224,7 +227,10 @@ async function handleApi(req, res, path) {
     auth.sessions[t] = { email, exp: Date.now() + 90 * 24 * 3600 * 1000 }
     await saveAuth(auth)
     const out = { token: t, email }
-    if (PAYMENTS_ENABLED) out.subUntil = u.subUntil ?? 0
+    if (PAYMENTS_ENABLED) {
+      out.subUntil = u.subUntil ?? 0
+      out.autoRenew = Boolean(u.stripeSub)
+    }
     return json(res, 200, out)
   }
 
@@ -252,9 +258,20 @@ async function handleApi(req, res, path) {
     if (!PAYMENTS_ENABLED) return json(res, 400, { error: 'payments disabled' })
     const email = sessionEmail(auth, req)
     if (!email) return json(res, 401, { error: 'ログインしていません' })
-    const payment = await createCheckout(auth, email, 'month', originOf(req))
+    const plan = body.plan === 'sub' ? 'sub' : 'month'
+    const payment = await createCheckout(auth, email, plan, originOf(req))
     await saveAuth(auth)
     return json(res, 200, { payment })
+  }
+
+  // stop auto-renewal (subscription cancels at period end; access runs to subUntil)
+  if (path === '/api/pay/cancel' && req.method === 'POST') {
+    if (!PAYMENTS_ENABLED) return json(res, 400, { error: 'payments disabled' })
+    const email = sessionEmail(auth, req)
+    if (!email) return json(res, 401, { error: 'ログインしていません' })
+    const r = await cancelSubscription(auth, email)
+    if (r.cancelled) await saveAuth(auth)
+    return json(res, 200, r)
   }
 
   // plan prices (for the register screen)
@@ -426,6 +443,20 @@ createServer(async (req, res) => {
   const path = new URL(req.url, 'http://x').pathname
   logAccess(req, res, path)
   try {
+    // Stripe webhook — raw body required for signature verification,
+    // so it bypasses handleApi's JSON parsing
+    if (path === '/api/webhook/stripe' && req.method === 'POST') {
+      let raw = ''
+      req.on('data', (c) => {
+        raw += c
+        if (raw.length > 1_000_000) req.destroy()
+      })
+      await new Promise((resolve) => req.on('end', resolve))
+      const auth = await loadAuth()
+      const r = await handleWebhook(auth, raw, req.headers['stripe-signature'] ?? '')
+      if (r.ok) await saveAuth(auth)
+      return json(res, r.status, r.ok ? { received: true } : { error: r.error })
+    }
     if (MAINTENANCE) {
       if (path.startsWith('/api/'))
         return json(res, 503, { error: 'ただいまメンテナンス中です — 数分後にもう一度お試しください' })

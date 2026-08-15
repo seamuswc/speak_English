@@ -6,13 +6,17 @@ export interface Auth {
   email: string
   /** epoch ms the paid subscription ends; undefined = payments disabled */
   subUntil?: number
+  /** true when the user has an auto-renewing Stripe subscription */
+  autoRenew?: boolean
 }
+
+export type Plan = 'month' | 'sub'
 
 export interface PaymentInfo {
   /** Stripe Checkout URL to redirect the customer */
   url: string
   sessionId: string
-  plan: 'month' | 'year'
+  plan: Plan
   days: number
 }
 
@@ -46,10 +50,10 @@ async function call<T>(path: string, opts: RequestInit = {}): Promise<T> {
   return j as T
 }
 
-export const apiRegister = (email: string, password: string) =>
+export const apiRegister = (email: string, password: string, plan: Plan = 'sub') =>
   call<RegisterResult>('/api/register', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, plan }),
   })
 
 export const apiPayCheck = (email: string | null, token: string | null, sessionId: string) =>
@@ -62,11 +66,18 @@ export const apiPayCheck = (email: string | null, token: string | null, sessionI
     },
   )
 
-export const apiPayRenew = (token: string, plan: 'month' | 'year' = 'month') =>
+export const apiPayRenew = (token: string, plan: Plan = 'sub') =>
   call<{ payment: PaymentInfo }>('/api/pay/renew', {
     method: 'POST',
     headers: { authorization: `Bearer ${token}` },
     body: JSON.stringify({ plan }),
+  })
+
+export const apiPayCancel = (token: string) =>
+  call<{ cancelled: boolean }>('/api/pay/cancel', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}` },
+    body: '{}',
   })
 
 // ─── Stripe redirect handoff ────────────────────────────────────────────────

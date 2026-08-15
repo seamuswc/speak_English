@@ -49,13 +49,22 @@ Server env (set in the environment or in `server/.env`, which is gitignored):
 
 ## Payments
 
+Two plans, both ¥800 (JPY only, Japanese Stripe Checkout):
+
+- **月額 (sub)** — auto-renewing monthly subscription (`mode: subscription`).
+  Each paid renewal invoice hits `/api/webhook/stripe` (signature-verified)
+  and extends access by 31 days. Users can cancel auto-renew from the account
+  screen (`/api/pay/cancel` cancels at period end; access runs to `subUntil`).
+- **1か月のみ (month)** — one-time payment, 31 days, no renewal.
+
 Registration stores credentials in `pendingRegs`, creates a Stripe Checkout
-session (¥800, JPY) and redirects the browser to Stripe. After payment, Stripe
-returns to `/?session_id=…`; the app verifies the session server-side
-(`payment_status === 'paid'`, replay-protected) and only then creates the
-account. Renewal extends `subUntil` from the later of now / current expiry.
-If a customer pays but never completes the redirect, re-registering with the
-same email claims the paid session instead of charging twice.
+session and redirects the browser to Stripe. After payment, Stripe returns to
+`/?session_id=…`; the app verifies the session server-side
+(replay-protected) and only then creates the account. If a customer pays but
+never completes the redirect, re-registering with the same email claims the
+paid session instead of charging twice. Every session and payment is tagged
+`site: eigobot` so revenue stays filterable when this Stripe account hosts
+multiple sites.
 
 ## Maintenance mode
 
