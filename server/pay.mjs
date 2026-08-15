@@ -41,7 +41,6 @@ export async function createCheckout(auth, email, plan, origin) {
   if (!p) throw new Error('bad plan')
 
   const shared = {
-    payment_method_types: ['card'],
     customer_email: email,
     locale: 'ja', // Japanese UI for Japanese customers
     // never convert the price into the customer's local currency — ¥ only
@@ -57,6 +56,8 @@ export async function createCheckout(auth, email, plan, origin) {
     session = await getStripe().checkout.sessions.create({
       ...shared,
       mode: 'subscription',
+      // subscriptions renew automatically → card only (PayPay/konbini are one-time)
+      payment_method_types: ['card'],
       line_items: [{ price: STRIPE_SUB_PRICE_ID, quantity: 1 }],
       subscription_data: { metadata: { email, plan, site: 'eigobot' } },
     })
@@ -64,6 +65,10 @@ export async function createCheckout(auth, email, plan, origin) {
     session = await getStripe().checkout.sessions.create({
       ...shared,
       mode: 'payment',
+      // Japanese local methods: card (incl. JCB), PayPay, konbini (コンビニ払い).
+      // konbini pays asynchronously — access is granted by the webhook on
+      // checkout.session.async_payment_succeeded, not at redirect time
+      payment_method_types: ['card', 'paypay', 'konbini'],
       line_items: [
         STRIPE_PRICE_ID
           ? { price: STRIPE_PRICE_ID, quantity: 1 }
@@ -204,6 +209,35 @@ export async function handleWebhook(auth, rawBody, signature) {
       }
       console.warn(`pay: renewal invoice ${invoice.id} for unknown subscription ${subId}`)
     }
+  }
+
+  // konbini (コンビニ払い) completes asynchronously: the customer leaves
+  // checkout with a payment slip and pays at the store hours later — grant
+  // access when Stripe confirms the money arrived
+  if (event.type === 'checkout.session.async_payment_succeeded') {
+    const session = event.data.object
+    const { email, plan } = session.metadata ?? {}
+    if (email && session.payment_status === 'paid') {
+      if (!auth.usedStripeSessions) auth.usedStripeSessions = []
+      if (auth.usedStripeSessions.includes(session.id)) return { ok: true, status: 200 }
+      auth.usedStripeSessions.push(session.id)
+      const { subUntil, isNew } = grantAccess(auth, email, plan ?? 'month', null)
+      if (!auth.payments) auth.payments = []
+      auth.payments.push({
+        email,
+        plan: plan ?? 'month',
+        jpy: (PLANS[plan] ?? PLANS.month).jpy,
+        tx: session.id,
+        t: Date.now(),
+      })
+      console.log(
+        `pay: ${email} ${isNew ? 'registered' : 'renewed'} via async payment (konbini) → ${session.id}, until ${new Date(subUntil).toISOString()}`,
+      )
+    }
+  }
+
+  if (event.type === 'checkout.session.async_payment_failed') {
+    console.warn(`pay: async payment failed for session ${event.data.object?.id}`)
   }
 
   return { ok: true, status: 200 } // acknowledged, nothing to do

@@ -1614,7 +1614,7 @@ function AuthScreen({
                     </button>
                   ))}
                   <p className="col-span-2 text-center text-[11px] text-stone-400">
-                    クレジットカード払い (Stripe · 日本語ページに移動します)
+                    月額プランはクレジットカード · 1か月のみはカード / PayPay / コンビニ払い対応
                   </p>
                 </div>
               )}
@@ -1776,7 +1776,7 @@ function PayReturnScreen({
           onDone({ token: r.token ?? token!, email: r.email ?? email!, subUntil: r.subUntil })
         } else {
           setError(
-            'お支払いがまだ確認できません。決済を完了した場合は「再確認」を押してください。',
+            'お支払いがまだ確認できません。カード・PayPay でお支払い済みの場合は「再確認」を押してください。コンビニ払いの場合は、店舗でお支払いいただくと自動的に有効になります — お支払い後、このページで再確認してください。',
           )
         }
       })
