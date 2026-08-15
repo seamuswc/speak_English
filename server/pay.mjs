@@ -31,11 +31,14 @@ export async function createCheckout(auth, email, plan, origin) {
   const session = await getStripe().checkout.sessions.create({
     payment_method_types: ['card'],
     customer_email: email,
+    locale: 'ja', // Japanese UI for Japanese customers
+    // never convert the price into the customer's local currency — ¥ only
+    adaptive_pricing: { enabled: false },
     line_items: [
       {
         price_data: {
           currency: 'jpy',
-          product_data: { name: 'Speak English — 月額サブスクリプション' },
+          product_data: { name: 'Eigobot — 月額サブスクリプション' },
           unit_amount: p.jpy, // JPY is a zero-decimal currency: 800 = ¥800
         },
         quantity: 1,

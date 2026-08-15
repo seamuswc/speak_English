@@ -82,13 +82,13 @@ function resetEmailHtml(link) {
   <div style="max-width:480px;margin:0 auto;padding:40px 16px;">
     <div style="background:#ffffff;border:1px solid #e7e5e4;border-radius:16px;overflow:hidden;">
       <div style="background:#047857;padding:24px 32px;">
-        <span style="color:#ffffff;font-size:20px;font-weight:700;letter-spacing:-0.3px;">🎓 Speak English</span>
+        <span style="color:#ffffff;font-size:20px;font-weight:700;letter-spacing:-0.3px;">🎓 Eigobot</span>
         <span style="color:#a7f3d0;font-size:13px;float:right;line-height:28px;">英語 · 0 → 流暢</span>
       </div>
       <div style="padding:32px;">
         <h1 style="margin:0 0 8px;font-size:22px;font-weight:600;color:#1c1917;">パスワードの再設定</h1>
         <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#57534e;">
-          Speak English アカウントのパスワード再設定リクエストを受け付けました。
+          Eigobot アカウントのパスワード再設定リクエストを受け付けました。
           下のボタンから新しいパスワードを設定してください:
         </p>
         <div style="text-align:center;margin:0 0 24px;">
@@ -120,9 +120,9 @@ async function sendResetEmail(email, link) {
     body: JSON.stringify({
       from: 'Eigobot <noreply@support.eigobot.com>',
       to: [email],
-      subject: 'パスワードの再設定 — Speak English',
+      subject: 'パスワードの再設定 — Eigobot',
       html: resetEmailHtml(link),
-      text: `Speak English のパスワードを再設定します (リンクの有効期限は1時間):\n${link}\n\n心当たりがない場合は、このメールを無視してください。`,
+      text: `Eigobot のパスワードを再設定します (リンクの有効期限は1時間):\n${link}\n\n心当たりがない場合は、このメールを無視してください。`,
     }),
   })
   const j = await r.json().catch(() => ({}))

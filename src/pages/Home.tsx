@@ -410,7 +410,7 @@ function StudyApp({
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-2">
             <GraduationCap className="h-6 w-6 text-emerald-700" />
-            <h1 className="text-lg font-semibold tracking-tight">Speak English</h1>
+            <h1 className="text-lg font-semibold tracking-tight">Eigobot</h1>
             <span className="hidden text-xs text-stone-500 sm:inline">
               英語 · 0 → 流暢
             </span>
@@ -1489,7 +1489,7 @@ function AuthScreen({
         </button>
         <div className="mb-6 flex flex-col items-center gap-2 text-center">
           <GraduationCap className="h-10 w-10 text-emerald-700" />
-          <h1 className="text-2xl font-semibold tracking-tight">Speak English</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Eigobot</h1>
           <p className="text-sm text-stone-500">英語 · 0 → 流暢</p>
         </div>
 

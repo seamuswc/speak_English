@@ -1,4 +1,4 @@
-# Speak English — 英単語SRS (for Japanese speakers)
+# Eigobot — 英単語SRS (for Japanese speakers)
 
 A spaced-repetition web app that takes Japanese speakers of English from 0 →
 fluent. Same engine and layout as the Govoru Russian app, with an English deck

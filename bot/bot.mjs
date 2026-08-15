@@ -77,7 +77,7 @@ async function handleMessage(msg) {
   if (text.startsWith('/start') || text.startsWith('/study')) {
     await send(
       chatId,
-      `🇬🇧 <b>Speak English</b> — 英語をゼロからペラペラまで。\n` +
+      `🇬🇧 <b>Eigobot</b> — 英語をゼロからペラペラまで。\n` +
         `✓ 正解 (+1レベル) か ✗ 不正解 (−1レベル) で答えてね。活用形もその単語の習熟度にカウントされます。\n\n` +
         `/study — 復習する\n/stats — 進捗を見る\n/quota 30 — 1日の新規単語数\n/help — コマンド一覧`,
     )
