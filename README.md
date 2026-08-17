@@ -1,8 +1,7 @@
 # Eigobot — 英単語SRS (for Japanese speakers)
 
 A spaced-repetition web app that takes Japanese speakers of English from 0 →
-fluent. Same engine and layout as the Govoru Russian app, with an English deck
-and a fully Japanese UI.
+fluent, with an 8,000-word English deck and a fully Japanese UI.
 
 ## What's in the box
 
@@ -42,9 +41,12 @@ Server env (set in the environment or in `server/.env`, which is gitignored):
 | --- | --- |
 | `PORT` | listen port (default `80`) |
 | `STRIPE_SECRET_KEY` | Stripe secret key (`sk_…`) — enables payments; without it the app is free/open |
+| `STRIPE_PRICE_ID` | persistent Price (`price_…`) for the one-time 31-day plan |
+| `STRIPE_SUB_PRICE_ID` | persistent Price for the auto-renewing monthly subscription |
+| `STRIPE_WEBHOOK_SECRET` | signing secret (`whsec_…`) for `/api/webhook/stripe` — required for subscription renewals |
 | `SUB_DAYS` | days of access per ¥800 payment (default `31`) |
 | `RESEND_API_KEY` | password-reset email |
-| `TTS_PYTHON` / `TTS_VOICE` | python with edge-tts installed / voice name |
+| `TTS_PYTHON` / `TTS_VOICE` | python with edge-tts installed / voice name (default `en-US-JennyNeural`) |
 | `MAINTENANCE` | `1` = serve the maintenance page (`server/maintenance.html`) and 503 the API |
 
 ## Payments
